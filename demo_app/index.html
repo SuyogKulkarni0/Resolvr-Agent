@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop Service Monitor</title>
+<style>
+  :root { --bg:#0b1630; --card:#13224a; --line:#233463; --text:#e8eefc; --mute:#93a4cc;
+          --ok:#19c3a6; --warn:#f5b63d; --bad:#ff5d6c; --blue:#3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 "Segoe UI",system-ui,sans-serif; }
+  header { display:flex; justify-content:space-between; align-items:center; padding:18px 28px; border-bottom:1px solid var(--line); flex-wrap:wrap; gap:10px; }
+  h1 { margin:0; font-size:20px; }
+  .pill { padding:4px 12px; border-radius:999px; font-weight:600; font-size:13px; background:var(--card); border:1px solid var(--line); }
+  main { padding:24px 28px; max-width:1100px; margin:0 auto; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .tile .label { color:var(--mute); font-size:13px; }
+  .tile .value { font-size:30px; font-weight:700; margin-top:4px; }
+  .tile.warn { border-color:var(--warn); } .tile.warn .value { color:var(--warn); }
+  .tile.bad  { border-color:var(--bad); }  .tile.bad .value  { color:var(--bad); }
+  h2 { font-size:16px; margin:26px 0 10px; color:var(--mute); text-transform:uppercase; letter-spacing:.06em; }
+  #alerts .alert { background:rgba(255,93,108,.12); border:1px solid var(--bad); border-radius:10px; padding:10px 14px; margin-bottom:8px; }
+  #alerts .alert.warning { background:rgba(245,182,61,.12); border-color:var(--warn); }
+  #alerts .none { color:var(--ok); }
+  .buttons { display:flex; flex-wrap:wrap; gap:10px; }
+  button { background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 14px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--blue); }
+  button.danger { border-color:#7a3340; } button.good { border-color:#1f7a6b; }
+  #logs { background:#08101f; border:1px solid var(--line); border-radius:12px; padding:12px; font:12.5px/1.5 Consolas,monospace; height:230px; overflow:auto; white-space:pre-wrap; }
+  .ERROR { color:var(--bad); } .WARN { color:var(--warn); } .INFO { color:var(--mute); }
+  small { color:var(--mute); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Shop Service &mdash; Live Monitor</h1>
+  <div><span class="pill" id="version">v?</span> <span class="pill" id="fault">fault: ?</span></div>
+</header>
+<main>
+  <div class="tiles">
+    <div class="tile" id="t-rps"><div class="label">Requests / sec</div><div class="value" id="rps">-</div></div>
+    <div class="tile" id="t-err"><div class="label">Error rate (30s)</div><div class="value" id="err">-</div></div>
+    <div class="tile" id="t-p95"><div class="label">p95 latency</div><div class="value" id="p95">-</div></div>
+    <div class="tile" id="t-mem"><div class="label">Memory</div><div class="value" id="mem">-</div></div>
+  </div>
+
+  <h2>Active alerts</h2>
+  <div id="alerts"></div>
+
+  <h2>Break it (inject a failure)</h2>
+  <div class="buttons">
+    <button class="danger" onclick="post('/admin/fault',{mode:'leak'})">Memory leak</button>
+    <button class="danger" onclick="post('/admin/fault',{mode:'errors'})">DB errors</button>
+    <button class="danger" onclick="post('/admin/fault',{mode:'slow'})">Slow responses</button>
+    <button class="danger" onclick="post('/admin/fault',{mode:'inventory_down'})">Dependency down</button>
+    <button class="danger" onclick="post('/admin/deploy',{version:'v1.1.0',note:'release with checkout changes'})">Deploy bad release v1.1.0</button>
+    <button class="good" onclick="post('/admin/deploy',{version:'v1.0.0',note:'rollback'})">Rollback to v1.0.0</button>
+    <button class="good" onclick="post('/admin/fault',{mode:'none'})">Clear fault</button>
+    <button class="good" onclick="post('/admin/reset',{})">Reset everything</button>
+  </div>
+
+  <h2>Recent logs</h2>
+  <div id="logs"></div>
+  <p><small>Simulated service for the Triage Agent project. Metrics refresh every second.</small></p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+function post(path, body) { return fetch(path, {method:'POST', body:JSON.stringify(body)}).then(refresh); }
+function level(tile, cls) { $(tile).className = 'tile ' + cls; }
+async function refresh() {
+  try {
+    const [m, a, l] = await Promise.all(['/api/metrics','/api/alerts','/api/logs?n=40'].map(u => fetch(u).then(r => r.json())));
+    $('version').textContent = m.version;
+    $('fault').textContent = 'fault: ' + m.fault;
+    $('rps').textContent = m.requests_per_sec;
+    $('err').textContent = m.error_rate_pct + '%';
+    $('p95').textContent = m.p95_latency_ms + ' ms';
+    $('mem').textContent = m.memory_mb + ' MB';
+    level('t-err', m.error_rate_pct > 10 ? 'bad' : m.error_rate_pct > 2 ? 'warn' : '');
+    level('t-p95', m.p95_latency_ms > 1000 ? 'bad' : m.p95_latency_ms > 400 ? 'warn' : '');
+    level('t-mem', m.memory_mb > 150 ? 'bad' : m.memory_mb > 100 ? 'warn' : '');
+    $('alerts').innerHTML = a.length
+      ? a.map(x => `<div class="alert ${x.severity}"><b>${x.alert}</b> &middot; ${x.summary}</div>`).join('')
+      : '<div class="none">&#10003; No active alerts</div>';
+    const box = $('logs'), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+    box.innerHTML = l.map(e => `<div class="${e.level}">${e.ts.slice(11,19)} ${e.level} [${e.version}] ${e.msg}</div>`).join('');
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  } catch (e) { $('alerts').innerHTML = '<div class="alert">Service unreachable</div>'; }
+}
+refresh(); setInterval(refresh, 1000);
+</script>
+</body>
+</html>
