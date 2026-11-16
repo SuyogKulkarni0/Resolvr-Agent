@@ -36,7 +36,23 @@ Fix paths for the agent to learn: rollback to `v1.0.0`, clear the fault, or rese
 
 Logs and deploy history are also written to `data/app.log` and `data/deploys.jsonl`.
 
+## Phase 2: read-only triage agent
+
+`agent/agent.py` investigates firing alerts with Claude tool use. It has four read-only tools (alerts, metrics, logs, deploys) and one `submit_diagnosis` tool that returns the root cause, evidence, a proposed action and a confidence score. It cannot change anything. Diagnoses are appended to `data/diagnoses.jsonl`.
+
+```bash
+pip install anthropic
+export ANTHROPIC_API_KEY=...     # PowerShell: $env:ANTHROPIC_API_KEY="..."
+python agent/agent.py            # triage once (break something in the UI first)
+python agent/agent.py --watch    # poll every 10 s
+```
+
+Tests use a scripted fake model, so they need no API key or running service:
+
+```bash
+cd agent && python -m unittest -v
+```
+
 ## Next phases
-2. Read-only agent: Claude API tool use over alerts, metrics, logs, deploys; outputs root cause, evidence, proposed action, confidence.
 3. Guarded actions with human approval and an audit log.
 4. Eval over injected incidents, README diagram, demo GIF.
