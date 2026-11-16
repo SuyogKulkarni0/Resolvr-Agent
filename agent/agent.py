@@ -171,6 +171,20 @@ def run_tool(name, args):
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
+def announce_incident(emit, alerts):
+    """Report that alerts fired, with a snapshot of the metrics at that moment.
+
+    The snapshot is the "before" half of the before/after proof shown on the dashboard.
+    """
+    try:
+        before = fetch("/api/metrics")
+    except Exception:
+        before = None
+    emit("run_started", f"Alert detected: {', '.join(a['alert'] for a in alerts)}",
+         "; ".join(a["summary"] for a in alerts), tone="bad",
+         alerts=[a["alert"] for a in alerts], metrics=before)
+
+
 def run_triage(client, verbose=True, model=None, emit=no_report):
     """Run one investigation. Returns the diagnosis dict, or None if it never concluded.
 
@@ -254,8 +268,7 @@ def main():
         alerts = fetch("/api/alerts")
         if alerts:
             print(f"{len(alerts)} alert(s) firing: {', '.join(a['alert'] for a in alerts)}. Investigating...")
-            emit("run_started", f"Alert detected: {', '.join(a['alert'] for a in alerts)}",
-                 "; ".join(a["summary"] for a in alerts), tone="bad")
+            announce_incident(emit, alerts)
             diagnosis = run_triage(client, model=model, emit=emit)
             if diagnosis:
                 report(diagnosis)

@@ -6,115 +6,137 @@
 <title>Shop Service Monitoring Dashboard</title>
 <style>
   :root {
-    --bg:#08090c; --panel:#0e1015; --panel2:#0b0c10; --line:#1c2029; --line2:#272c38; --text:#e4e7ee; --mute:#7c8496;
-    --green:#7ee787; --cyan:#79c0ff; --yellow:#e3b341; --red:#ff7b72; --violet:#b392f0; --teal:#7fd6c2; --blue:#5865f2;
+    --bg:#08090c; --panel:#0e1015; --line:#1c2029; --line2:#272c38; --text:#e4e7ee; --mute:#7c8496;
+    --green:#7ee787; --cyan:#79c0ff; --yellow:#e3b341; --red:#ff7b72; --violet:#b392f0; --teal:#7fd6c2; --blue:#5865f2; --indigo:#8b91ff;
+    --sans:system-ui,"Segoe UI",-apple-system,Roboto,sans-serif;
     --mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
   }
   * { box-sizing:border-box; }
   html { color-scheme:dark; scroll-behavior:smooth; }
-  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 var(--mono); min-height:100vh; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 var(--sans); min-height:100vh; }
 
-  /* ---------- shell: icon rail + content ---------- */
+  /* ---------- shell ---------- */
   .shell { display:grid; grid-template-columns:58px 1fr; min-height:100vh; }
   .rail { position:sticky; top:0; height:100vh; display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 0; background:#0a0b0f; border-right:1px solid var(--line); }
   .rail .logo { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; background:linear-gradient(135deg,#ff5d6c,#e0457b); color:#fff; font-size:16px; margin-bottom:14px; }
   .rail a { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; color:var(--mute); text-decoration:none; font-size:17px; }
   .rail a:hover { background:#161922; color:var(--text); } .rail a.on { background:#171a24; color:var(--text); box-shadow:inset 2px 0 0 var(--blue); }
   @media (max-width:900px) { .shell { grid-template-columns:1fr; } .rail { display:none; } }
-
   .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:16px 24px 6px; }
-  .title { font:600 20px system-ui,"Segoe UI",sans-serif; display:flex; align-items:center; gap:10px; }
+  .title { font-size:20px; font-weight:600; display:flex; align-items:center; gap:10px; }
   .title i { width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 10px var(--green); }
   .top-right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--mute); font-size:12.5px; }
   .pill { padding:5px 11px; border:1px solid var(--line2); border-radius:8px; background:var(--panel); color:var(--text); }
   .pill.fault.active { color:var(--red); border-color:#5a2a2a; }
-
-  .layout { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:16px; padding:10px 24px 40px; align-items:start; }
+  .layout { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:18px; padding:10px 24px 40px; align-items:start; }
   @media (max-width:1100px) { .layout { grid-template-columns:1fr; padding:10px 14px 30px; } .agent { position:static !important; height:auto !important; } }
-  .col { display:flex; flex-direction:column; gap:16px; min-width:0; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; min-width:0; }
-  .ph { display:flex; justify-content:space-between; align-items:center; padding:11px 14px 0; }
-  .pt { font:600 14px system-ui,"Segoe UI",sans-serif; color:var(--text); }
-  .pt small { font:12px var(--mono); color:var(--mute); font-weight:400; margin-left:8px; }
-  .pb { padding:10px 14px 14px; }
+  .col { display:flex; flex-direction:column; gap:18px; min-width:0; }
 
-  /* ---------- stat panels ---------- */
-  .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; } @media (max-width:700px) { .stats { grid-template-columns:repeat(2,1fr); } }
-  .stat { text-align:left; } .stat .val { font:500 40px system-ui,"Segoe UI",sans-serif; text-align:center; padding:18px 0 6px; font-variant-numeric:tabular-nums; letter-spacing:-1px; }
-  .stat .val small { font-size:14px; color:var(--mute); margin-left:4px; letter-spacing:0; }
-  .stat .cap { text-align:center; color:var(--mute); font-size:11.5px; padding-bottom:12px; }
-  .stat.warn .val { color:var(--yellow); } .stat.bad .val { color:var(--red); } .stat.bad { border-color:#4a2327; } .stat.warn { border-color:#4a3b17; }
+  /* every section says what it is and what it is for */
+  .sec-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
+  .sec-title { font-size:15px; font-weight:600; } .sec-sub { color:var(--mute); font-size:12.5px; margin-top:1px; }
+  .tag { font:700 10.5px var(--mono); letter-spacing:.08em; padding:3px 8px; border-radius:4px; border:1px solid var(--line2); color:var(--mute); white-space:nowrap; }
+  .tag.live { color:var(--green); border-color:#25552f; } .tag.live::before { content:"● "; animation:pulse 1.4s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
 
-  /* ---------- alerts table ---------- */
-  table { width:100%; border-collapse:collapse; }
-  th { text-align:left; font:600 13px system-ui,"Segoe UI",sans-serif; padding:9px 12px; background:#12141b; border-bottom:1px solid var(--line2); }
-  td { padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  tr:last-child td { border-bottom:none; }
-  .sev { font-weight:700; font-size:11px; letter-spacing:.06em; padding:2px 7px; border-radius:4px; }
-  .sev.critical { background:#ff7b7222; color:var(--red); border:1px solid #ff7b7255; } .sev.warning { background:#e3b34122; color:var(--yellow); border:1px solid #e3b34155; }
-  .bar { height:6px; border-radius:3px; background:#1a1e28; min-width:70px; position:relative; } .bar i { display:block; height:100%; border-radius:3px; background:var(--red); } .bar.warning i { background:var(--yellow); }
-  .bar u { position:absolute; top:-3px; bottom:-3px; left:33.3%; width:1px; background:var(--mute); }
-  .healthy { color:var(--green); padding:6px 2px; } .healthy span { color:var(--mute); }
+  /* ============ 1. METRIC WIDGETS: dashboard tiles (sans, big numbers) ============ */
+  .widgets { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; } @media (max-width:700px) { .widgets { grid-template-columns:repeat(2,1fr); } }
+  .widget { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px 10px; }
+  .widget .wt { font-size:13px; font-weight:600; } .widget .wv { font-size:38px; font-weight:500; text-align:center; padding:14px 0 4px; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+  .widget .wv small { font-size:14px; color:var(--mute); margin-left:4px; letter-spacing:0; } .widget .wc { text-align:center; color:var(--mute); font-size:11.5px; }
+  .widget.warn .wv { color:var(--yellow); } .widget.bad .wv { color:var(--red); } .widget.bad { border-color:#4a2327; } .widget.warn { border-color:#4a3b17; }
 
-  /* ---------- charts ---------- */
-  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+  /* ============ 2. ALERTS: alert-manager style cards (state, labels, duration) ============ */
+  .alerts-box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px 16px; }
+  .chips { display:flex; gap:8px; }
+  .chip { font:600 12px var(--sans); padding:3px 10px; border-radius:999px; background:#161922; color:var(--mute); } .chip b { margin-right:4px; }
+  .chip.fire { background:#ff7b7220; color:var(--red); } .chip.res { background:#7ee78718; color:var(--green); }
+  .al { display:flex; justify-content:space-between; gap:16px; border-radius:6px; border:1px solid #5a2a2a; border-left:4px solid var(--red); background:linear-gradient(90deg,#ff7b7214,transparent 60%); padding:11px 14px; margin-top:10px; }
+  .al.warning { border-color:#5c4a14; border-left-color:var(--yellow); background:linear-gradient(90deg,#e3b34114,transparent 60%); }
+  .al-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .state { font:800 11px var(--sans); letter-spacing:.07em; padding:2px 8px; border-radius:4px; background:var(--red); color:#1d0907; } .al.warning .state { background:var(--yellow); color:#241a05; }
+  .al-name { font-weight:700; font-size:16px; } .al-dur { color:var(--mute); font-size:12.5px; }
+  .al-sum { color:#c4cada; margin-top:3px; font-size:13.5px; }
+  .labels { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; } .labels code { font:11.5px var(--mono); background:#161922; border:1px solid var(--line2); border-radius:4px; padding:1px 7px; color:#a9b2c8; }
+  .al-val { text-align:right; white-space:nowrap; } .al-val .n { font-size:26px; font-weight:600; color:var(--red); letter-spacing:-.5px; } .al.warning .al-val .n { color:var(--yellow); } .al-val .l { color:var(--mute); font-size:12px; }
+  .none { display:flex; align-items:center; gap:12px; padding:14px 4px 4px; } .none .ck { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:#7ee78720; color:var(--green); font-size:18px; }
+  .none b { color:var(--green); } .none small { display:block; color:var(--mute); }
+  .res-title { color:var(--mute); font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; margin:16px 0 4px; }
+  .res-row { display:flex; justify-content:space-between; gap:10px; padding:7px 2px; border-top:1px solid var(--line); color:var(--mute); font-size:13px; flex-wrap:wrap; }
+  .res-row b { color:var(--green); font-weight:600; margin-right:8px; } .res-row span:first-child { color:#b9c0d2; }
+
+  /* ============ 3. LIVE CHECKS: a measurement stream with PASS / FAIL results ============ */
+  .checks-box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 0 0; overflow:hidden; }
+  .checks-box .sec-head { padding:0 16px; }
+  .ck-head, .ck { display:grid; grid-template-columns:64px 74px 112px 1fr 92px; gap:10px; padding:5px 16px; align-items:center; }
+  .ck-head { color:var(--mute); font:600 11px var(--sans); letter-spacing:.08em; text-transform:uppercase; background:#12141b; border-top:1px solid var(--line2); border-bottom:1px solid var(--line2); padding-top:7px; padding-bottom:7px; }
+  #checks { height:310px; overflow:auto; background:#090b10; font:12.5px var(--mono); }
+  .ck { border-bottom:1px solid #12151c; } .ck .t { color:#5f6881; } .ck .sub { color:#cfd5e6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ck .dt { color:#9aa3ba; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ty { font-weight:700; font-size:11px; letter-spacing:.05em; } .ty.CHECK { color:#8d96ad; } .ty.ALERT { color:var(--red); } .ty.CHANGE { color:var(--cyan); } .ty.AGENT { color:var(--indigo); } .ty.ACTION { color:var(--yellow); }
+  .vd { font-weight:800; font-size:11px; letter-spacing:.05em; text-align:center; padding:2px 6px; border-radius:3px; justify-self:start; }
+  .vd.FAIL, .vd.FIRING, .vd.DENIED { background:#ff7b7222; color:var(--red); } .vd.PASS, .vd.RESOLVED, .vd.APPROVED { background:#7ee78722; color:var(--green); } .vd.DONE { background:#e3b34122; color:var(--yellow); } .vd.PROPOSED { background:#8b91ff22; color:var(--indigo); }
+  .ck.fresh { animation:fade .4s ease; } @keyframes fade { from { background:#1b2236; } }
+  @media (max-width:700px) { .ck-head, .ck { grid-template-columns:58px 62px 1fr 80px; } .ck .sub, .ck-head span:nth-child(3) { display:none; } }
+
+  /* ============ 4. CHARTS ============ */
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; }
+  .chart { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:11px 12px 6px; } .chart .wt { font-size:13px; font-weight:600; }
   .chart svg { width:100%; height:auto; display:block; } .chart text { font:8.5px var(--mono); fill:#6d7588; }
-  .chart .legend { padding:0 14px 12px; color:var(--mute); font-size:11.5px; display:flex; gap:14px; } .chart .legend b { font-weight:400; }
 
-  /* ---------- unix terminals ---------- */
-  .term-head { display:flex; justify-content:space-between; align-items:center; padding:9px 14px; border-bottom:1px solid var(--line); color:var(--mute); font-size:12px; }
-  .prompt { color:var(--green); } .term-head .prompt::after { content:"_"; animation:blink 1s steps(1) infinite; margin-left:2px; }
-  @keyframes blink { 50% { opacity:0; } }
-  #logs { background:#06070a; padding:10px 14px; height:220px; overflow:auto; font-size:12px; line-height:1.6; border-radius:0 0 6px 6px; }
-  #logs div { white-space:pre-wrap; word-break:break-word; color:#aab1c4; }
-  .t { color:#5a6275; } .lvl-ERROR { color:var(--red); font-weight:700; } .lvl-WARN { color:var(--yellow); font-weight:700; } .lvl-INFO { color:var(--cyan); }
-  .msg-ERROR { color:#ffb3ad; } .host { color:var(--violet); }
+  /* ============ 5. SERVICE LOGS: raw syslog, as on a Linux host ============ */
+  .syslog-box { background:#050608; border:1px solid var(--line2); border-radius:6px; overflow:hidden; }
+  .syslog-bar { display:flex; justify-content:space-between; padding:7px 12px; background:#101216; border-bottom:1px solid var(--line2); color:#8a93a8; font:12px var(--mono); }
+  .syslog-bar .p { color:var(--green); }
+  #logs { padding:10px 12px; height:230px; overflow:auto; font:12px/1.55 var(--mono); color:#b8bfcf; }
+  #logs div { white-space:pre-wrap; word-break:break-word; } #logs .e { color:#ff9e97; } #logs .w { color:#f2cc6b; } #logs .h { color:#7d8aa8; }
 
-  .btns { display:flex; flex-wrap:wrap; gap:8px; }
-  button { font:12.5px var(--mono); background:transparent; color:var(--text); border:1px solid var(--line2); border-radius:5px; padding:7px 11px; cursor:pointer; }
+  /* ============ 6. CHAOS: controls ============ */
+  .chaos-box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px 16px; }
+  .groups { display:grid; grid-template-columns:1.5fr 1fr; gap:18px; } @media (max-width:700px) { .groups { grid-template-columns:1fr; } }
+  .glabel { color:var(--mute); margin-bottom:8px; font-size:12px; } .btns { display:flex; flex-wrap:wrap; gap:8px; }
+  button { font:600 12.5px var(--mono); background:transparent; color:var(--text); border:1px solid var(--line2); border-radius:5px; padding:7px 11px; cursor:pointer; }
   button:hover { background:#161922; } button:active { transform:translateY(1px); }
   button.inject { color:var(--red); border-color:#4d2b2e; } button.inject:hover { background:#1f1315; border-color:var(--red); }
   button.recover { color:var(--green); border-color:#25452d; } button.recover:hover { background:#101c13; border-color:var(--green); }
-  .groups { display:grid; grid-template-columns:1.5fr 1fr; gap:18px; } @media (max-width:700px) { .groups { grid-template-columns:1fr; } }
-  .glabel { color:var(--mute); margin-bottom:8px; font-size:12px; }
 
-  /* ---------- agent: a separate backend process, shown as a terminal ---------- */
-  .agent { position:sticky; top:14px; height:calc(100vh - 28px); min-height:560px; display:flex; flex-direction:column; background:#070b09; border:1px solid #1f3a2a; border-radius:8px; overflow:hidden; box-shadow:0 0 0 1px #0d1a12, 0 20px 60px #00000099; }
-  .chrome { display:flex; align-items:center; gap:10px; padding:9px 14px; background:#0b120e; border-bottom:1px solid #1a3024; }
-  .dots { display:flex; gap:6px; } .dots i { width:11px; height:11px; border-radius:50%; background:#ff5f57; } .dots i:nth-child(2){background:#febc2e} .dots i:nth-child(3){background:#28c840}
-  .chrome .who { flex:1; text-align:center; color:#7aa88a; font-size:12px; }
-  .state { font-size:11px; font-weight:700; letter-spacing:.06em; padding:2px 9px; border-radius:4px; border:1px solid #2a3a30; color:var(--mute); white-space:nowrap; }
-  .state.live { color:var(--cyan); border-color:#1f4d6b; animation:pulse 1.4s infinite; } .state.wait { color:var(--yellow); border-color:#5c4a14; animation:pulse 1.4s infinite; }
-  .state.done { color:var(--green); border-color:#25552f; } .state.bad { color:var(--red); border-color:#5a2a2a; }
-  @keyframes pulse { 50% { opacity:.55; } }
+  /* ============ 7. AGENT: an AI on-call engineer (sans, indigo, step cards: not a log) ============ */
+  .agent { position:sticky; top:14px; height:calc(100vh - 28px); min-height:580px; display:flex; flex-direction:column; background:linear-gradient(180deg,#0f1126,#0a0b17); border:1px solid #2c3068; border-radius:14px; overflow:hidden; box-shadow:0 20px 60px #00000099; }
+  .a-head { display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid #20244f; }
+  .a-ico { width:38px; height:38px; border-radius:11px; display:grid; place-items:center; font-size:20px; background:linear-gradient(135deg,#4a52d6,#8b5cf6); }
+  .a-title { font-weight:700; font-size:17px; } .a-sub { color:#8e94c4; font-size:12.5px; } .a-head > div:nth-child(2) { flex:1; }
+  .a-state { font:800 11px var(--sans); letter-spacing:.06em; padding:4px 11px; border-radius:999px; background:#1a1d44; color:#9aa0d8; white-space:nowrap; }
+  .a-state.live { background:#79c0ff22; color:var(--cyan); animation:pulse 1.4s infinite; } .a-state.wait { background:#e3b34122; color:var(--yellow); animation:pulse 1.4s infinite; }
+  .a-state.done { background:#7ee78722; color:var(--green); } .a-state.bad { background:#ff7b7222; color:var(--red); }
 
-  /* incident summary: the issue being solved, in one place */
-  #incident { padding:14px 16px; border-bottom:1px solid #1a3024; background:linear-gradient(180deg,#0a130e,#070b09); }
-  .inc-title { display:flex; justify-content:space-between; align-items:center; color:#7aa88a; font-size:11.5px; letter-spacing:.14em; margin-bottom:10px; }
-  .kv { display:grid; grid-template-columns:78px 1fr; gap:7px 12px; align-items:start; }
-  .kv .k { color:#5f8a70; font-size:11.5px; letter-spacing:.08em; padding-top:2px; } .kv .v { color:#d9efe0; word-break:break-word; }
-  .kv .v.big { font:600 15px system-ui,"Segoe UI",sans-serif; color:#fff; }
-  .kv ul { margin:0; padding:0; list-style:none; } .kv li { color:#9ec2ab; font-size:12.5px; } .kv li::before { content:"› "; color:var(--green); }
-  .act { color:var(--yellow); font-weight:700; } .conf { color:var(--mute); margin-left:10px; font-size:12px; }
-  .status { font-weight:800; letter-spacing:.05em; } .status.wait { color:var(--yellow); } .status.live { color:var(--cyan); } .status.good { color:var(--green); } .status.bad { color:var(--red); } .status.warn { color:var(--yellow); }
-  .approve-row { display:flex; gap:10px; margin-top:12px; }
-  button.approve { background:var(--green); color:#03140a; border-color:var(--green); font-weight:700; padding:8px 24px; } button.approve:hover { background:#9af0a1; }
-  button.deny { color:var(--red); border-color:#5a2a2a; padding:8px 18px; }
-  .idle { color:#5f8a70; } .idle b { color:var(--green); }
+  #incident { padding:14px 18px; border-bottom:1px solid #20244f; background:#0d0f24; }
+  .inc-title { display:flex; justify-content:space-between; color:#8e94c4; font-size:11.5px; letter-spacing:.14em; margin-bottom:10px; font-weight:600; }
+  .kv { display:grid; grid-template-columns:76px 1fr; gap:8px 12px; align-items:start; }
+  .kv .k { color:#7a80b8; font-size:11.5px; letter-spacing:.08em; padding-top:3px; } .kv .v { color:#e1e4fa; word-break:break-word; }
+  .kv .v.big { font-weight:600; font-size:15.5px; color:#fff; }
+  .kv ul { margin:0; padding:0; list-style:none; } .kv li { color:#aab0dd; font-size:13px; } .kv li::before { content:"› "; color:var(--indigo); }
+  .act { color:var(--yellow); font-weight:700; font-family:var(--mono); } .conf { color:#8e94c4; margin-left:10px; font-size:12px; }
+  .st-text { font-weight:800; letter-spacing:.05em; } .st-text.wait { color:var(--yellow); } .st-text.live { color:var(--cyan); } .st-text.good { color:var(--green); } .st-text.bad { color:var(--red); } .st-text.warn { color:var(--yellow); }
+  .result { font-family:var(--mono); } .result .b { color:var(--red); } .result .a { color:var(--green); }
+  .approve-row { display:flex; gap:10px; margin-top:13px; }
+  button.approve { background:var(--green); color:#03140a; border-color:var(--green); font:700 13px var(--sans); padding:9px 26px; border-radius:7px; } button.approve:hover { background:#9af0a1; }
+  button.deny { color:var(--red); border-color:#5a2a2a; font:600 13px var(--sans); padding:9px 18px; border-radius:7px; }
+  .idle { color:#8e94c4; } .idle b { color:var(--indigo); }
 
-  .term-bar { display:flex; justify-content:space-between; align-items:center; padding:8px 16px; color:#5f8a70; font-size:11.5px; border-bottom:1px solid #14261c; }
-  .term-bar label { cursor:pointer; user-select:none; } .term-bar input { accent-color:#28c840; vertical-align:-2px; }
-  #timeline { flex:1; overflow:auto; padding:10px 16px 14px; font-size:12.5px; line-height:1.55; }
-  .ln { display:grid; grid-template-columns:62px 1fr; gap:10px; padding:2px 0; } .ln.fresh { animation:fade .3s ease; } @keyframes fade { from { opacity:0; } }
-  .ln .ts { color:#4a6a57; } .ln .tx { color:#cfe8d5; word-break:break-word; white-space:pre-wrap; }
-  .ln .tag { font-weight:700; } .tag.alert { color:var(--red); } .tag.diag { color:var(--violet); } .tag.policy { color:var(--teal); } .tag.human { color:var(--yellow); }
-  .tag.action { color:var(--yellow); } .tag.verify { color:var(--green); } .tag.done { color:var(--green); } .tag.bad { color:var(--red); } .tag.warn { color:var(--yellow); }
-  .ln.cmd .tx { color:#fff; } .ln.cmd .tx::before { content:"$ "; color:var(--green); }
-  .ln.res .tx { color:#8fb39d; } .ln.res .tx::before { content:"→ "; color:#4a6a57; }
-  .ln.dim .tx { color:#5f7d6b; font-style:italic; }
-  .empty-term { color:#5f8a70; padding:6px 0; } .empty-term .prompt::after { content:"_"; animation:blink 1s steps(1) infinite; }
-  .guard { display:flex; flex-wrap:wrap; gap:8px; padding:9px 16px; border-top:1px solid #14261c; background:#080d0a; color:#5f8a70; font-size:11.5px; }
-  .guard span::before { content:"["; } .guard span::after { content:"]"; }
+  .steps-bar { display:flex; justify-content:space-between; align-items:center; padding:9px 18px 0; color:#8e94c4; font-size:12px; font-weight:600; letter-spacing:.06em; }
+  .steps-bar label { font-weight:400; letter-spacing:0; cursor:pointer; } .steps-bar input { accent-color:var(--indigo); vertical-align:-2px; }
+  #timeline { flex:1; overflow:auto; padding:8px 18px 14px; }
+  .step { display:grid; grid-template-columns:30px 1fr auto; gap:11px; padding-top:11px; } .step.fresh { animation:fade2 .35s ease; } @keyframes fade2 { from { opacity:0; transform:translateY(4px); } }
+  .s-rail { display:flex; flex-direction:column; align-items:center; } .s-rail::after { content:""; flex:1; width:2px; background:#232853; margin-top:4px; min-height:12px; } .step:last-child .s-rail::after { display:none; }
+  .s-node { width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font-size:14px; background:#171a3d; border:1.5px solid #343a80; }
+  .s-body { padding-bottom:8px; min-width:0; } .s-title { font-weight:600; font-size:14px; } .s-detail { color:#9ba1cf; font-size:12.5px; margin-top:2px; word-break:break-word; }
+  .s-time { color:#5f66a3; font-size:11.5px; padding-top:6px; font-variant-numeric:tabular-nums; }
+  .step.good .s-node { background:#103323; border-color:#2f8f5b; } .step.good .s-title { color:var(--green); }
+  .step.bad .s-node { background:#3a1618; border-color:#a8444a; } .step.bad .s-title { color:var(--red); }
+  .step.warn .s-node { background:#3a2c0c; border-color:#a8801f; } .step.warn .s-title { color:var(--yellow); }
+  .step.working .s-node { border-color:var(--cyan); animation:pulse 1.2s infinite; } .step.working .s-title { color:var(--cyan); font-weight:500; }
+  .step.dim .s-title, .step.dim .s-detail { color:#6e75ac; font-style:italic; font-weight:400; }
+  .a-guard { display:flex; flex-wrap:wrap; gap:7px; padding:10px 18px; border-top:1px solid #20244f; background:#0a0c1d; }
+  .a-guard span { font-size:11px; font-weight:600; color:#8e94c4; background:#161a3a; border-radius:999px; padding:3px 10px; }
   .foot { color:var(--mute); font-size:11.5px; text-align:center; padding:0 0 22px; grid-column:1/-1; }
 </style>
 </head>
@@ -124,9 +146,10 @@
     <div class="logo">&#9673;</div>
     <a class="on" href="#overview" title="Overview">&#9638;</a>
     <a href="#alerts" title="Alerts">&#9888;</a>
-    <a href="#logs-panel" title="Logs">&#9776;</a>
+    <a href="#checks-sec" title="Live checks">&#10003;</a>
+    <a href="#syslog" title="Service logs">&#9776;</a>
     <a href="#chaos" title="Failure injection">&#9889;</a>
-    <a href="#agent" title="Triage agent">&#9002;_</a>
+    <a href="#agent" title="Triage agent">&#129302;</a>
   </nav>
 
   <main>
@@ -134,7 +157,6 @@
       <div class="title"><i></i>Shop Service Monitoring Dashboard</div>
       <div class="top-right">
         <span id="refreshed">Refreshed 0s ago</span>
-        <span class="pill">Last 90 seconds</span>
         <span class="pill" id="version">v?</span>
         <span class="pill fault" id="fault">fault: none</span>
       </div>
@@ -143,32 +165,38 @@
     <div class="layout">
       <!-- ============ LEFT: the monitored service ============ -->
       <section class="col">
-        <div class="stats">
-          <div class="panel stat" id="t-rps"><div class="ph"><span class="pt">Requests / sec</span></div><div class="val"><span id="rps">-</span></div><div class="cap">last 10s</div></div>
-          <div class="panel stat" id="t-err"><div class="ph"><span class="pt">Error rate</span></div><div class="val"><span id="err">-</span><small>%</small></div><div class="cap">limit 10%</div></div>
-          <div class="panel stat" id="t-p95"><div class="ph"><span class="pt">p95 latency</span></div><div class="val"><span id="p95">-</span><small>ms</small></div><div class="cap">limit 1000 ms</div></div>
-          <div class="panel stat" id="t-mem"><div class="ph"><span class="pt">Memory</span></div><div class="val"><span id="mem">-</span><small>MB</small></div><div class="cap">limit 150 MB</div></div>
+        <div class="widgets">
+          <div class="widget" id="t-rps"><div class="wt">Requests / sec</div><div class="wv"><span id="rps">-</span></div><div class="wc">last 10 s</div></div>
+          <div class="widget" id="t-err"><div class="wt">Error rate</div><div class="wv"><span id="err">-</span><small>%</small></div><div class="wc">alert above 10%</div></div>
+          <div class="widget" id="t-p95"><div class="wt">p95 latency</div><div class="wv"><span id="p95">-</span><small>ms</small></div><div class="wc">alert above 1000 ms</div></div>
+          <div class="widget" id="t-mem"><div class="wt">Memory</div><div class="wv"><span id="mem">-</span><small>MB</small></div><div class="wc">alert above 150 MB</div></div>
         </div>
 
-        <div class="panel" id="alerts">
-          <div class="ph"><span class="pt">Active alerts<small id="alert-count">0 firing</small></span></div>
-          <div class="pb" style="padding:10px 0 4px"><div id="alert-body"></div></div>
+        <div id="alerts">
+          <div class="sec-head"><div><div class="sec-title">Alerts</div><div class="sec-sub">Which monitoring rules are firing right now, and for how long</div></div><div class="chips" id="alert-chips"></div></div>
+          <div class="alerts-box" id="alert-body"></div>
+        </div>
+
+        <div id="checks-sec" class="checks-box">
+          <div class="sec-head"><div><div class="sec-title">Live checks</div><div class="sec-sub">What the monitor measures: confirms the problem, the fix and the recovery, in order</div></div><span class="tag live">LIVE</span></div>
+          <div class="ck-head"><span>Time</span><span>Type</span><span>Subject</span><span>Detail</span><span>Result</span></div>
+          <div id="checks"></div>
         </div>
 
         <div class="charts">
-          <div class="panel chart"><div class="ph"><span class="pt">Error rate</span></div><svg id="c-err" viewBox="0 0 300 150"></svg><div class="legend"><b style="color:var(--red)">&#9473; error %</b><b>&#9548; limit</b></div></div>
-          <div class="panel chart"><div class="ph"><span class="pt">p95 latency</span></div><svg id="c-p95" viewBox="0 0 300 150"></svg><div class="legend"><b style="color:var(--violet)">&#9473; ms</b><b>&#9548; limit</b></div></div>
-          <div class="panel chart"><div class="ph"><span class="pt">Memory</span></div><svg id="c-mem" viewBox="0 0 300 150"></svg><div class="legend"><b style="color:var(--teal)">&#9473; MB</b><b>&#9548; limit</b></div></div>
+          <div class="chart"><div class="wt">Error rate</div><svg id="c-err" viewBox="0 0 300 150"></svg></div>
+          <div class="chart"><div class="wt">p95 latency</div><svg id="c-p95" viewBox="0 0 300 150"></svg></div>
+          <div class="chart"><div class="wt">Memory</div><svg id="c-mem" viewBox="0 0 300 150"></svg></div>
         </div>
 
-        <div class="panel" id="logs-panel">
-          <div class="term-head"><span><span class="prompt">$ tail -f /var/log/shop/app.log</span></span><span>shop.service</span></div>
-          <div id="logs"></div>
+        <div id="syslog">
+          <div class="sec-head"><div><div class="sec-title">Service logs</div><div class="sec-sub">What the application itself writes, in standard syslog format</div></div></div>
+          <div class="syslog-box"><div class="syslog-bar"><span><span class="p">root@shop-01:~#</span> journalctl -u shop -f</span><span>-- Logs begin --</span></div><div id="logs"></div></div>
         </div>
 
-        <div class="panel" id="chaos">
-          <div class="term-head"><span><span class="prompt">$ chaos</span></span><span>failure injection</span></div>
-          <div class="pb groups">
+        <div id="chaos">
+          <div class="sec-head"><div><div class="sec-title">Failure injection</div><div class="sec-sub">Break the demo service on purpose, or put it back</div></div></div>
+          <div class="chaos-box groups">
             <div><div class="glabel"># inject</div>
               <div class="btns">
                 <button class="inject" onclick="post('/admin/fault',{mode:'leak'})">memory-leak</button>
@@ -187,19 +215,19 @@
         </div>
       </section>
 
-      <!-- ============ RIGHT: the agent, a separate backend process ============ -->
+      <!-- ============ RIGHT: the AI agent, a separate process ============ -->
       <aside class="agent" id="agent">
-        <div class="chrome">
-          <div class="dots"><i></i><i></i><i></i></div>
-          <div class="who">triage-agent@shop:~$</div>
-          <span class="state" id="agent-status">IDLE</span>
+        <div class="a-head">
+          <div class="a-ico">&#129302;</div>
+          <div><div class="a-title">Triage Agent</div><div class="a-sub">AI on-call engineer: investigates, proposes a fix, asks you to approve</div></div>
+          <span class="a-state" id="agent-status">IDLE</span>
         </div>
         <div id="incident"></div>
-        <div class="term-bar"><span>$ journalctl -fu triage-agent</span><label><input type="checkbox" id="verbose"> show reasoning</label></div>
+        <div class="steps-bar"><span>INVESTIGATION STEPS</span><label><input type="checkbox" id="verbose"> show reasoning</label></div>
         <div id="timeline"></div>
-        <div class="guard"><span>read-only tools</span><span>action allowlist</span><span>human approval</span><span>audit log</span></div>
+        <div class="a-guard"><span>read-only tools</span><span>action allowlist</span><span>human approval</span><span>audit log</span></div>
       </aside>
-      <div class="foot">Simulated service for the Triage Agent project &middot; refreshes every second</div>
+      <div class="foot">Simulated service for the Triage Agent project &middot; everything refreshes every second</div>
     </div>
   </main>
 </div>
@@ -208,52 +236,50 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clock = iso => new Date(iso).toLocaleTimeString([], {hour12:false});
-function post(path, body) { return fetch(path, {method:'POST', body:JSON.stringify(body)}).then(() => { refresh(); refreshAgent(); }); }
+const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+const dur = s => s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s` : `${Math.round(s)}s`;
+function syslogStamp(iso) {  // "Nov 16 14:02:11", the format Linux syslog uses
+  const d = new Date(iso);
+  return d.toLocaleString('en-US', {month:'short'}) + ' ' + String(d.getDate()).padStart(2, ' ') + ' ' + d.toLocaleTimeString([], {hour12:false});
+}
+function post(path, body) { return fetch(path, {method:'POST', body:JSON.stringify(body)}).then(() => { refresh(); refreshAgent(); refreshChecks(); }); }
+const J = u => fetch(u).then(r => r.json());
 
-// ---------------- service side ----------------
-const N = 90, hist = {err:[], p95:[], mem:[]};
-let lastRefresh = Date.now();
+// ---------------- charts + widgets ----------------
+const N = 90, hist = {err:[], p95:[], mem:[]}; let lastRefresh = Date.now();
 const NICE = [1,2,5,10,20,50,100,200,500,1000,2000,5000,10000];
-function chart(id, arr, limit, color, unit) {
+function chart(id, arr, limit, color) {
   const svg = $(id); if (arr.length < 2) return;
   const W = 300, H = 150, L = 34, R = 8, T = 10, B = 20;
   const want = Math.max(limit * 1.25, ...arr, 1), yMax = NICE.find(n => n >= want) || want;
   const x = i => L + ((i + (N - arr.length)) / (N - 1)) * (W - L - R), y = v => T + (1 - Math.min(v, yMax) / yMax) * (H - T - B);
   let g = '';
-  for (let k = 0; k <= 4; k++) {
-    const v = yMax * k / 4, yy = y(v);
-    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="#1c2029"/><text x="${L - 4}" y="${yy + 3}" text-anchor="end">${+v.toFixed(1)}</text>`;
-  }
-  [['-90s', 0], ['-60s', 30], ['-30s', 60], ['now', 89]].forEach(([t, i]) => {
-    g += `<text x="${L + (i / (N - 1)) * (W - L - R)}" y="${H - 5}" text-anchor="${i === 89 ? 'end' : 'middle'}">${t}</text>`;
-  });
-  const pts = arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-  const ly = y(limit);
-  svg.innerHTML = g + `<line x1="${L}" x2="${W - R}" y1="${ly}" y2="${ly}" stroke="#e3b341" stroke-dasharray="3 3" opacity=".8"/>` +
-    `<polygon points="${x(0)},${H - B} ${pts} ${x(arr.length - 1)},${H - B}" fill="${color}" opacity=".12"/>` +
-    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>`;
+  for (let k = 0; k <= 4; k++) { const v = yMax * k / 4, yy = y(v); g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="#1c2029"/><text x="${L - 4}" y="${yy + 3}" text-anchor="end">${+v.toFixed(1)}</text>`; }
+  [['-90s', 0], ['-60s', 30], ['-30s', 60], ['now', 89]].forEach(([t, i]) => { g += `<text x="${L + (i / (N - 1)) * (W - L - R)}" y="${H - 5}" text-anchor="${i === 89 ? 'end' : 'middle'}">${t}</text>`; });
+  const pts = arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '), ly = y(limit);
+  $(id).innerHTML = g + `<line x1="${L}" x2="${W - R}" y1="${ly}" y2="${ly}" stroke="#e3b341" stroke-dasharray="3 3" opacity=".8"/>` +
+    `<polygon points="${x(0)},${H - B} ${pts} ${x(arr.length - 1)},${H - B}" fill="${color}" opacity=".12"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>`;
 }
-function level(id, lvl) { $(id).className = 'panel stat ' + (lvl === 'ok' ? '' : lvl); }
+function level(id, lvl) { $(id).className = 'widget ' + (lvl === 'ok' ? '' : lvl); }
 
-const ALERT_META = {
-  HighErrorRate:  {label:'HighErrorRate',  key:'error_rate_pct', limit:10,   unit:'%'},
-  HighLatencyP95: {label:'HighLatencyP95', key:'p95_latency_ms', limit:1000, unit:' ms'},
-  HighMemory:     {label:'HighMemory',     key:'memory_mb',      limit:150,  unit:' MB'},
-};
-function alertsTable(a, m) {
-  if (!a.length) return `<div class="healthy" style="padding:6px 14px 10px"><span>$ alerts --firing</span><br>&#10003; 0 firing. All systems healthy.</div>`;
-  return `<table><tr><th>Severity</th><th>Alert</th><th>Now</th><th>Limit</th><th style="width:26%">Usage</th></tr>` + a.map(x => {
-    const meta = ALERT_META[x.alert] || {}, sev = x.severity === 'critical' ? 'critical' : 'warning';
-    const val = meta.key ? m[meta.key] : '', pct = meta.limit ? Math.min(100, val / (meta.limit * 3) * 100) : 0;
-    return `<tr><td><span class="sev ${sev}">${esc(sev.toUpperCase())}</span></td><td>${esc(x.alert)}</td>
-      <td style="color:${sev === 'critical' ? 'var(--red)' : 'var(--yellow)'}">${esc(val)}${meta.unit || ''}</td><td>${esc(meta.limit ?? '')}${meta.unit || ''}</td>
-      <td><div class="bar ${sev}"><i style="width:${pct}%"></i><u></u></div></td></tr>`;
-  }).join('') + `</table>`;
+// ---------------- alerts: alert-manager style ----------------
+const RULE_LABEL = {HighErrorRate:'error_rate_pct', HighLatencyP95:'p95_latency_ms', HighMemory:'memory_mb'};
+function renderAlerts(a, resolved) {
+  $('alert-chips').innerHTML = `<span class="chip ${a.length ? 'fire' : ''}"><b>${a.length}</b>firing</span><span class="chip res"><b>${resolved.length}</b>resolved</span>`;
+  let html = a.length ? a.map(x => `<div class="al ${x.severity === 'critical' ? '' : 'warning'}"><div>
+      <div class="al-top"><span class="state">FIRING</span><span class="al-name">${esc(x.alert)}</span><span class="al-dur">firing for ${dur(Date.now() / 1000 - x.since_epoch)}</span></div>
+      <div class="al-sum">${esc(x.summary)}</div>
+      <div class="labels"><code>severity=${esc(x.severity)}</code><code>service=shop</code><code>rule=${esc(RULE_LABEL[x.alert] || x.key)} &gt; ${esc(x.limit)}</code></div></div>
+      <div class="al-val"><div class="n">${esc(x.value)}${esc(x.unit)}</div><div class="l">limit ${esc(x.limit)}${esc(x.unit)}</div></div></div>`).join('')
+    : `<div class="none"><div class="ck">&#10003;</div><div><b>No alerts firing</b><small>3 rules evaluated every second: error rate, p95 latency, memory</small></div></div>`;
+  if (resolved.length) html += `<div class="res-title">Recently resolved</div>` + resolved.slice(0, 4).map(r =>
+    `<div class="res-row"><span><b>&#10003; RESOLVED</b>${esc(r.alert)}</span><span>fired ${esc(clock(r.fired_at))} &middot; lasted ${dur(r.duration_s)} &middot; peak ${esc(r.peak)}${esc(r.unit)}</span></div>`).join('');
+  $('alert-body').innerHTML = html;
 }
 
 async function refresh() {
   try {
-    const [m, a, l] = await Promise.all(['/api/metrics','/api/alerts','/api/logs?n=60'].map(u => fetch(u).then(r => r.json())));
+    const [m, a, l, res] = await Promise.all(['/api/metrics', '/api/alerts', '/api/logs?n=80', '/api/alerts/resolved'].map(J));
     lastRefresh = Date.now();
     $('version').textContent = m.version;
     $('fault').textContent = 'fault: ' + m.fault; $('fault').className = 'pill fault' + (m.fault !== 'none' ? ' active' : '');
@@ -263,19 +289,38 @@ async function refresh() {
     level('t-mem', m.memory_mb > 150 ? 'bad' : m.memory_mb > 100 ? 'warn' : 'ok');
     for (const [k, v] of [['err', m.error_rate_pct], ['p95', m.p95_latency_ms], ['mem', m.memory_mb]]) { hist[k].push(v); if (hist[k].length > N) hist[k].shift(); }
     chart('c-err', hist.err, 10, '#ff7b72'); chart('c-p95', hist.p95, 1000, '#b392f0'); chart('c-mem', hist.mem, 150, '#7fd6c2');
-    $('alert-count').textContent = a.length + ' firing';
-    $('alert-body').innerHTML = alertsTable(a, m);
+    renderAlerts(a, res);
     const box = $('logs'), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
-    box.innerHTML = l.map(e => `<div><span class="t">${esc(clock(e.ts))}</span> <span class="host">shop[${esc(e.version)}]</span> <span class="lvl-${esc(e.level)}">${esc(e.level.padEnd(5))}</span> <span class="msg-${esc(e.level)}">${esc(e.msg)}</span></div>`).join('');
+    box.innerHTML = l.map(e => {   // Nov 16 14:02:11 shop-01 shop[18432]: ERROR: message
+      const cls = e.level === 'ERROR' ? 'e' : e.level === 'WARN' ? 'w' : '';
+      return `<div class="${cls}"><span class="h">${esc(syslogStamp(e.ts))} ${esc(e.host || 'shop-01')} shop[${esc(e.pid || 1)}]:</span> ${esc(e.level)}: ${esc(e.msg)}</div>`;
+    }).join('');
     if (atBottom) box.scrollTop = box.scrollHeight;
-  } catch (e) { $('alert-body').innerHTML = '<div class="healthy" style="color:var(--red);padding:6px 14px 10px">service unreachable</div>'; }
+  } catch (e) { $('alert-body').innerHTML = '<div class="none"><div><b style="color:var(--red)">Service unreachable</b></div></div>'; }
 }
 setInterval(() => { $('refreshed').textContent = `Refreshed ${Math.round((Date.now() - lastRefresh) / 1000)}s ago`; }, 1000);
 
-// ---------------- agent side. All text comes from the agent/model, so it is always escaped. ----------------
-let lastKey = '', seenId = null;
-const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+// ---------------- live checks: what the monitor measured, in order ----------------
+let checkCursor = 0;
+async function refreshChecks() {
+  try {
+    const {entries, latest} = await J('/api/checks?since=' + checkCursor);
+    const box = $('checks');
+    if (latest < checkCursor) { checkCursor = 0; box.innerHTML = ''; return refreshChecks(); }   // service was reset
+    if (!entries.length) return;
+    const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    box.insertAdjacentHTML('beforeend', entries.map(c =>
+      `<div class="ck${checkCursor ? ' fresh' : ''}"><span class="t">${esc(clock(c.ts))}</span><span class="ty ${esc(c.type)}">${esc(c.type)}</span><span class="sub">${esc(c.subject)}</span><span class="dt" title="${esc(c.detail)}">${esc(c.detail)}</span>${c.verdict ? `<span class="vd ${esc(c.verdict)}">${esc(c.verdict)}</span>` : '<span></span>'}</div>`).join(''));
+    while (box.children.length > 300) box.removeChild(box.firstChild);
+    checkCursor = latest;
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  } catch (e) { /* retried next second */ }
+}
 
+// ---------------- agent. All text comes from the agent/model, so it is always escaped. ----------------
+const METRIC = {HighErrorRate:{key:'error_rate_pct', label:'error rate', unit:'%', limit:10}, HighLatencyP95:{key:'p95_latency_ms', label:'p95 latency', unit:' ms', limit:1000}, HighMemory:{key:'memory_mb', label:'memory', unit:' MB', limit:150}};
+const TOOL_NICE = {get_alerts:['🔎','Checked which alerts are firing'], get_metrics:['📊','Read the live metrics'], get_logs:['📜','Read the service logs'], get_deploys:['📦','Checked recent deploys']};
+let lastKey = '', seenId = null;
 function incidentStatus(run, approval) {
   const last = run[run.length - 1];
   if (approval.status === 'pending') return ['AWAITING APPROVAL', 'wait'];
@@ -285,73 +330,83 @@ function incidentStatus(run, approval) {
   return ['INVESTIGATING', 'live'];
 }
 function renderIncident(run, approval) {
-  if (!run.length) return `<div class="inc-title"><span>INCIDENT</span></div><div class="idle"><span class="prompt" style="color:var(--green)">$</span> no active incident. <b>watching for alerts</b>…</div>`;
-  const start = run.find(e => e.kind === 'run_started'), diag = [...run].reverse().find(e => e.kind === 'diagnosis');
-  const prop = approval.proposal;
-  const [status, tone] = incidentStatus(run, approval);
+  if (!run.length) return `<div class="inc-title"><span>CURRENT INCIDENT</span></div><div class="idle">No active incident. <b>Watching for alerts…</b></div>`;
+  const start = run.find(e => e.kind === 'run_started'), ver = [...run].reverse().find(e => e.kind === 'verification');
+  const diag = [...run].reverse().find(e => e.kind === 'diagnosis'), prop = approval.proposal, [status, tone] = incidentStatus(run, approval);
   const alertName = start ? start.title.replace(/^Alert detected: /, '') : '—';
-  const action = diag && diag.action ? diag.action : (prop ? prop.type : null);
-  const target = diag && diag.target_version ? diag.target_version : (prop && prop.target_version) || '';
+  const action = diag && diag.action ? diag.action : (prop ? prop.type : null), target = (diag && diag.target_version) || (prop && prop.target_version) || '';
   const conf = diag && typeof diag.confidence === 'number' ? Math.round(diag.confidence * 100) + '% confidence' : '';
   const ev = diag && diag.evidence ? diag.evidence.slice(0, 2).map(x => `<li>${esc(clip(x, 90))}</li>`).join('') : '';
-  let html = `<div class="inc-title"><span>INCIDENT</span><span>${esc(clock(run[0].ts))}</span></div><div class="kv">
+  let html = `<div class="inc-title"><span>CURRENT INCIDENT</span><span>${esc(clock(run[0].ts))}</span></div><div class="kv">
     <div class="k">ALERT</div><div class="v">${esc(alertName)}</div>
     <div class="k">PROBLEM</div><div class="v big">${diag ? esc(clip(diag.root_cause, 110)) : '<span class="idle">analysing…</span>'}</div>`;
   if (ev) html += `<div class="k">EVIDENCE</div><div class="v"><ul>${ev}</ul></div>`;
-  html += `<div class="k">ACTION</div><div class="v">${action ? `<span class="act">${esc(action)}${target ? ' → ' + esc(target) : ''}</span><span class="conf">${esc(conf)}</span>` : '<span class="idle">—</span>'}</div>
-    <div class="k">STATUS</div><div class="v"><span class="status ${tone}">${esc(status)}</span></div></div>`;
+  html += `<div class="k">ACTION</div><div class="v">${action ? `<span class="act">${esc(action)}${target ? ' → ' + esc(target) : ''}</span><span class="conf">${esc(conf)}</span>` : '<span class="idle">—</span>'}</div>`;
+  const M = start && start.alerts && METRIC[start.alerts[0]];
+  if (M && start.metrics && ver && ver.metrics) {
+    const b = start.metrics[M.key], a = ver.metrics[M.key], ok = a <= M.limit;
+    html += `<div class="k">RESULT</div><div class="v result">${esc(M.label)} <span class="b">${esc(b)}${esc(M.unit)}</span> → <span class="a">${esc(a)}${esc(M.unit)}</span> ${ok ? '✔ under the ' + M.limit + M.unit + ' limit' : '✖ still over the ' + M.limit + M.unit + ' limit'}</div>`;
+  }
+  html += `<div class="k">STATUS</div><div class="v"><span class="st-text ${tone}">${esc(status)}</span></div></div>`;
   if (approval.status === 'pending' && prop)
     html += `<div class="approve-row"><button class="approve" onclick="decide('approved')">Approve ${esc(prop.type)}</button><button class="deny" onclick="decide('denied')">Deny</button></div>`;
   return html;
 }
-
-function renderLine(e, verbose, prevCall) {
-  const fresh = seenId !== null && e.id > seenId ? ' fresh' : '', ts = `<span class="ts">${esc(clock(e.ts))}</span>`;
-  const row = (cls, body) => `<div class="ln ${cls}${fresh}">${ts}<span class="tx">${body}</span></div>`;
-  switch (e.kind) {
-    case 'run_started': return row('', `<span class="tag alert">[ALERT]</span> ${esc(e.title.replace(/^Alert detected: /, ''))} firing: ${esc(clip(e.detail, 110))}`);
-    case 'tool_call':   return row('cmd', esc(e.tool || e.title) + (e.detail && e.detail !== '{}' ? ' ' + esc(e.detail) : ''));
-    case 'tool_result': return row('res', esc(clip(e.detail, 260)));
-    case 'diagnosis':   return row('', `<span class="tag diag">[DIAGNOSIS]</span> ${esc(clip(e.root_cause, 120))}`);
-    case 'policy':      return row('', `<span class="tag policy">[POLICY]</span> ${esc(e.title.replace('Policy check: ', ''))}${e.detail && e.tone === 'warn' ? ' — ' + esc(clip(e.detail, 100)) : ''}`);
-    case 'approval':    return row('', `<span class="tag human">[HUMAN]</span> ${esc(e.title.replace('Human ', ''))}`);
-    case 'action':      return row('', `<span class="tag action">[ACTION]</span> ${esc(e.title.replace('Executed: ', ''))}`);
-    case 'verification':return row('', `<span class="tag verify">[VERIFY]</span> ${esc(e.title.replace('Verified: ', ''))}`);
-    case 'outcome':     return row('', `<span class="tag ${e.tone === 'good' ? 'done' : e.tone === 'bad' ? 'bad' : 'warn'}">[DONE]</span> ${esc(e.title)}`);
-    case 'thought':     return verbose ? row('dim', esc(clip(e.detail, 300))) : '';
-    case 'thinking':    return verbose ? row('dim', esc(e.title)) : '';
-    default: return '';
+// investigation steps: a tool call and its result become one card; reasoning is optional
+function buildSteps(run, verbose) {
+  const steps = [];
+  for (let i = 0; i < run.length; i++) {
+    const e = run[i];
+    switch (e.kind) {
+      case 'run_started': steps.push({e, icon:'🔔', title:'Alert received', detail:(e.alerts || []).join(', ') + (e.detail ? ': ' + clip(e.detail, 100) : ''), tone:'bad'}); break;
+      case 'tool_call': { const r = run[i + 1] && run[i + 1].kind === 'tool_result' ? run[++i] : null, n = TOOL_NICE[e.tool] || ['🔧', e.title];
+        steps.push({e, icon:n[0], title:n[1], detail: r ? clip(r.detail, 230) : 'running…'}); break; }
+      case 'diagnosis': steps.push({e, icon:'🧠', title:'Diagnosis', detail:clip(e.root_cause, 130), tone:'good'}); break;
+      case 'policy': steps.push({e, icon:'🛡️', title:e.title, detail:e.tone === 'warn' ? clip(e.detail, 110) : '', tone:e.tone}); break;
+      case 'approval': steps.push({e, icon:'👤', title:e.title, tone:e.tone}); break;
+      case 'action': steps.push({e, icon:'⚙️', title:e.title, tone:e.tone}); break;
+      case 'verification': steps.push({e, icon:'✅', title:e.title, detail:e.detail, tone:e.tone}); break;
+      case 'outcome': steps.push({e, icon:'🏁', title:e.title, tone:e.tone}); break;
+      case 'thought': if (verbose) steps.push({e, icon:'💬', title:'Reasoning', detail:clip(e.detail, 300), tone:'dim'}); break;
+      case 'thinking': if (verbose) steps.push({e, icon:'💭', title:e.title, tone:'dim'}); break;
+    }
   }
+  return steps;
 }
-
+function renderSteps(run, approval, verbose) {
+  const steps = buildSteps(run, verbose), finished = run.length && run[run.length - 1].kind === 'outcome';
+  if (!steps.length) return '<div class="idle" style="padding:16px 0">The agent is idle. When an alert fires, each step it takes appears here.</div>';
+  const t0 = new Date(run[0].ts);
+  let html = steps.map(s => `<div class="step ${esc(s.tone || '')}${seenId !== null && s.e.id > seenId ? ' fresh' : ''}"><div class="s-rail"><div class="s-node">${s.icon}</div></div>
+      <div class="s-body"><div class="s-title">${esc(s.title)}</div>${s.detail ? `<div class="s-detail">${esc(s.detail)}</div>` : ''}</div><div class="s-time">+${Math.round((new Date(s.e.ts) - t0) / 1000)}s</div></div>`).join('');
+  if (!finished) html += `<div class="step working"><div class="s-rail"><div class="s-node">⏳</div></div><div class="s-body"><div class="s-title">${approval.status === 'pending' ? 'Waiting for your approval…' : 'Working…'}</div></div><div></div></div>`;
+  return html;
+}
 async function refreshAgent() {
   try {
-    const {events, approval} = await fetch('/api/agent/events').then(r => r.json());
+    const {events, approval} = await J('/api/agent/events');
     const verbose = $('verbose').checked;
     const key = events.length + ':' + (events.length ? events[events.length-1].id : 0) + ':' + approval.status + ':' + verbose;
     if (key === lastKey) return;
     lastKey = key;
-    // focus on the current incident: everything since the latest alert
     let startIdx = 0; events.forEach((e, i) => { if (e.kind === 'run_started') startIdx = i; });
-    const run = events.slice(startIdx);
-
+    const run = events.slice(startIdx);   // focus on the current incident only
     $('incident').innerHTML = renderIncident(run, approval);
     const box = $('timeline'), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-    box.innerHTML = run.length ? run.map(e => renderLine(e, verbose)).join('')
-      : '<div class="empty-term"><span class="prompt">$ waiting for alerts</span></div>';
+    box.innerHTML = renderSteps(run, approval, verbose);
     if (atBottom) box.scrollTop = box.scrollHeight;
     seenId = events.length ? events[events.length-1].id : (seenId ?? 0);
-
     const st = $('agent-status');
-    if (!run.length) { st.className = 'state'; st.textContent = 'IDLE'; }
-    else { const [text, tone] = incidentStatus(run, approval); st.className = 'state ' + ({wait:'wait', live:'live', good:'done', bad:'bad', warn:'wait'}[tone]); st.textContent = clip(text, 22); }
+    if (!run.length) { st.className = 'a-state'; st.textContent = 'IDLE'; }
+    else { const [text, tone] = incidentStatus(run, approval); st.className = 'a-state ' + ({wait:'wait', live:'live', good:'done', bad:'bad', warn:'wait'}[tone]); st.textContent = clip(text, 22); }
   } catch (e) { /* page keeps working if the endpoint is briefly unavailable */ }
 }
-function decide(d) { fetch('/api/agent/approval/decision', {method:'POST', body:JSON.stringify({decision:d})}).then(refreshAgent); }
+function decide(d) { fetch('/api/agent/approval/decision', {method:'POST', body:JSON.stringify({decision:d})}).then(() => { refreshAgent(); refreshChecks(); }); }
 $('verbose').addEventListener('change', refreshAgent);
 
 refresh(); setInterval(refresh, 1000);
 refreshAgent(); setInterval(refreshAgent, 1000);
+refreshChecks(); setInterval(refreshChecks, 1000);
 </script>
 </body>
 </html>

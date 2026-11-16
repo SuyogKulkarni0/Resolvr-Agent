@@ -51,9 +51,44 @@ approval = {"status": "none", "proposal": None}  # none | pending | approved | d
 
 tracemalloc.start()
 
+# Alert bookkeeping and the live "checks" stream: what the monitor measured and when an alert
+# fired or resolved. Together they let anyone confirm detection and recovery as it happens.
+alert_state = {}                    # rule name -> {since, peak, severity, key, limit, unit} while firing
+alert_history = deque(maxlen=20)    # resolved alerts, newest first
+last_fail = {}                      # rule name -> last time it was failing (to show PASS lines after recovery)
+check_log = deque(maxlen=400)
+check_seq = [0]
+
 
 def clip(value, limit=2000):
     return value[:limit] if isinstance(value, str) else value
+
+
+def log_check(kind, subject, detail, verdict=""):
+    """Append one line to the live checks stream (CHECK, ALERT, CHANGE, AGENT, ACTION)."""
+    with lock:
+        check_seq[0] += 1
+        check_log.append({"id": check_seq[0], "ts": now(), "type": kind, "subject": subject,
+                          "detail": detail, "verdict": verdict})
+
+
+def mirror_agent_event(e):
+    """Show the agent's key steps in the checks stream, so the fix sits between the failing and passing checks."""
+    kind = e.get("kind")
+    if kind == "run_started":
+        log_check("AGENT", "triage-agent", "alert received, investigating")
+    elif kind == "diagnosis":
+        target = f" to {e['target_version']}" if e.get("target_version") else ""
+        log_check("AGENT", "triage-agent", f"proposes {e.get('action', 'action')}{target}", "PROPOSED")
+    elif kind == "approval":
+        log_check("AGENT", "operator", str(e.get("title", "")).lower().replace("human ", ""),
+                  "APPROVED" if "approved" in str(e.get("title", "")) else "DENIED")
+    elif kind == "action":
+        log_check("ACTION", "triage-agent", str(e.get("title", "")).replace("Executed: ", "") + " applied", "DONE")
+    elif kind == "verification":
+        log_check("AGENT", "triage-agent", e.get("title", "verification"), "PASS" if e.get("recovered") else "FAIL")
+    elif kind == "outcome":
+        log_check("AGENT", "triage-agent", e.get("title", ""), "")
 
 
 def add_agent_event(body):
@@ -63,6 +98,7 @@ def add_agent_event(body):
         event = {k: clip(v) for k, v in body.items() if k not in ("id", "ts")}
         event.update(id=event_seq[0], ts=now())
         agent_events.append(event)
+    mirror_agent_event(event)
     return event
 
 
@@ -71,7 +107,7 @@ def now():
 
 
 def log(level, message, **fields):
-    entry = {"ts": now(), "level": level, "service": "shop",
+    entry = {"ts": now(), "level": level, "service": "shop", "host": "shop-01", "pid": os.getpid(),
              "version": state["version"], "msg": message, **fields}
     line = json.dumps(entry)
     with lock:
@@ -144,20 +180,26 @@ def metrics():
     }
 
 
+# (name, severity, metric key, limit, unit, label for the summary text)
 ALERT_RULES = [
-    ("HighErrorRate", "critical", lambda m: m["error_rate_pct"] > 10,
-     lambda m: f"5xx error rate is {m['error_rate_pct']}% (threshold 10%)"),
-    ("HighLatencyP95", "warning", lambda m: m["p95_latency_ms"] > 1000,
-     lambda m: f"p95 latency is {m['p95_latency_ms']} ms (threshold 1000 ms)"),
-    ("HighMemory", "warning", lambda m: m["memory_mb"] > 150,
-     lambda m: f"memory is {m['memory_mb']} MB (threshold 150 MB)"),
+    ("HighErrorRate", "critical", "error_rate_pct", 10, "%", "5xx error rate"),
+    ("HighLatencyP95", "warning", "p95_latency_ms", 1000, " ms", "p95 latency"),
+    ("HighMemory", "warning", "memory_mb", 150, " MB", "memory"),
 ]
 
 
 def alerts():
+    """Currently firing alerts, with how long each has been firing."""
     m = metrics()
-    return [{"alert": n, "severity": s, "summary": msg(m), "since": m["ts"]}
-            for n, s, cond, msg in ALERT_RULES if m["window_requests"] and cond(m)]
+    out = []
+    for name, severity, key, limit, unit, label in ALERT_RULES:
+        if m["window_requests"] and m[key] > limit:
+            with lock:
+                since = alert_state.get(name, {}).get("since", time.time())
+            out.append({"alert": name, "severity": severity, "key": key, "value": m[key], "limit": limit,
+                        "unit": unit, "since_epoch": since, "since": m["ts"],
+                        "summary": f"{label} is {m[key]}{unit} (threshold {limit}{unit})"})
+    return out
 
 
 def set_fault(mode):
@@ -167,6 +209,7 @@ def set_fault(mode):
             leak.clear()
     # Deliberately vague: naming the mode here would hand the answer to whoever reads the logs.
     log("WARN", "runtime configuration changed", event="config_change")
+    log_check("CHANGE", "config", "runtime configuration changed")
 
 
 def set_version(version, note="deploy"):
@@ -174,6 +217,7 @@ def set_version(version, note="deploy"):
         state["version"] = version
     record_deploy(version, note)
     log("INFO", f"deployed {version}", event="deploy")
+    log_check("CHANGE", "deploy", f"{version} deployed ({note})")
 
 
 def reset():
@@ -187,11 +231,59 @@ def reset():
         state["fault"] = "none"
         requests_window.clear()
         log_buffer.clear()
+        check_log.clear()
+        alert_state.clear()
+        alert_history.clear()
+        last_fail.clear()
         agent_events.clear()
         approval.update(status="none", proposal=None)
         open(DEPLOY_FILE, "w").close()
     set_version("v1.0.0", "baseline")
     log("INFO", "reset to healthy state", event="reset")
+
+
+def monitor():
+    """The monitoring loop: evaluate every alert rule each second and record what it saw.
+
+    - A rule going over its limit adds an ALERT FIRING line; coming back adds ALERT RESOLVED.
+    - Every 5 s a failing rule adds a CHECK FAIL line, and for 15 s after recovery a CHECK PASS
+      line every 3 s, so the log shows the metric above the limit, then the fix, then the metric back under it.
+    - When everything is healthy it adds one summary line every 15 s.
+    """
+    tick, last_summary = 0, 0.0
+    while True:
+        m = metrics()
+        if m["window_requests"]:
+            now_s, produced = time.time(), False
+            for name, severity, key, limit, unit, label in ALERT_RULES:
+                value, firing = m[key], m[key] > limit
+                with lock:
+                    st = alert_state.get(name)
+                if firing and not st:
+                    with lock:
+                        alert_state[name] = {"since": now_s, "peak": value, "severity": severity, "key": key, "limit": limit, "unit": unit}
+                    log_check("ALERT", name, f"{label} {value}{unit} exceeds {limit}{unit}", "FIRING")
+                elif firing:
+                    st["peak"] = max(st["peak"], value)
+                elif st:
+                    secs = round(now_s - st["since"])
+                    with lock:
+                        alert_state.pop(name, None)
+                        alert_history.appendleft({"alert": name, "severity": severity, "fired_at": datetime.fromtimestamp(st["since"], timezone.utc).isoformat(timespec="seconds"),
+                                                  "resolved_at": now(), "duration_s": secs, "peak": st["peak"], "limit": limit, "unit": unit})
+                    log_check("ALERT", name, f"{label} back to {value}{unit} after {secs}s", "RESOLVED")
+                if firing:
+                    last_fail[name] = now_s
+                if firing and tick % 5 == 0:
+                    log_check("CHECK", key, f"{value}{unit} > {limit}{unit}", "FAIL"); produced = True
+                elif not firing and tick % 3 == 0 and now_s - last_fail.get(name, 0) < 15:
+                    log_check("CHECK", key, f"{value}{unit} <= {limit}{unit}", "PASS"); produced = True
+            if tick % 3 == 0 and not produced and now_s - last_summary >= 15:
+                log_check("CHECK", "all rules", f"{len(ALERT_RULES)}/{len(ALERT_RULES)} healthy "
+                          f"(errors {m['error_rate_pct']}%, p95 {m['p95_latency_ms']} ms, memory {m['memory_mb']} MB)", "PASS")
+                last_summary = now_s
+        tick += 1
+        time.sleep(1)
 
 
 def loadgen_worker():
@@ -245,6 +337,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, [json.loads(l) for l in f][-20:])
             except FileNotFoundError:
                 return self.send(200, [])
+        if url.path == "/api/checks":
+            since = int(parse_qs(url.query).get("since", ["0"])[0])
+            with lock:
+                return self.send(200, {"entries": [c for c in check_log if c["id"] > since][-200:], "latest": check_seq[0]})
+        if url.path == "/api/alerts/resolved":
+            with lock:
+                return self.send(200, list(alert_history))
         if url.path == "/api/agent/events":
             with lock:
                 return self.send(200, {"events": list(agent_events), "approval": dict(approval)})
@@ -296,6 +395,7 @@ def main():
     log("INFO", "shop service starting", event="startup", port=PORT)
     for _ in range(4):
         threading.Thread(target=loadgen_worker, daemon=True).start()
+    threading.Thread(target=monitor, daemon=True).start()
     print(f"Shop demo running on http://localhost:{PORT}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 

@@ -35,8 +35,8 @@ class GuardrailTest(unittest.TestCase):
     def test_approved_rollback_executes_and_verifies(self):
         with mock.patch.object(guardrails, "http", return_value={"ok": True}) as http:
             self.assertEqual(self.run_handle(diag()), "resolved")
-        http.assert_called_once_with("POST", "/admin/deploy",
-                                     {"version": "v1.0.0", "note": "automated rollback (approved)"})
+        http.assert_any_call("POST", "/admin/deploy",
+                             {"version": "v1.0.0", "note": "automated rollback (approved)"})
         self.assertEqual(self.events(), ["diagnosis", "approved", "executed", "verified"])
 
     def test_human_denial_changes_nothing(self):
@@ -83,7 +83,7 @@ class GuardrailTest(unittest.TestCase):
     def test_clear_fault_action(self):
         with mock.patch.object(guardrails, "http", return_value={"ok": True}) as http:
             self.assertEqual(self.run_handle(diag("clear_fault", target=None)), "resolved")
-        http.assert_called_once_with("POST", "/admin/fault", {"mode": "none"})
+        http.assert_any_call("POST", "/admin/fault", {"mode": "none"})
 
 
 if __name__ == "__main__":

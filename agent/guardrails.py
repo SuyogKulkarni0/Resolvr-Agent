@@ -87,6 +87,26 @@ def verify_recovery(timeout=VERIFY_TIMEOUT_S, interval=VERIFY_INTERVAL_S):
     return (not alerts), alerts
 
 
+def calm(m):
+    """True when every metric is comfortably inside its normal range (not just under the alert limit)."""
+    return m.get("error_rate_pct", 0) <= 2 and m.get("p95_latency_ms", 0) <= 400 and m.get("memory_mb", 0) <= 100
+
+
+def settle(timeout=40, interval=3):
+    """Wait for the service's rolling windows to drain, then return the metrics.
+
+    Alerts clear as soon as a metric dips under its limit, but a 30 s rolling window still holds
+    some of the failure. Waiting until the numbers are calm makes the 'after' value show real
+    recovery instead of 'just barely under the limit'.
+    """
+    deadline = time.time() + timeout
+    m = http("GET", "/api/metrics")
+    while not calm(m) and time.time() < deadline:
+        time.sleep(interval)
+        m = http("GET", "/api/metrics")
+    return m
+
+
 def cli_approve(diagnosis):
     a = diagnosis["proposed_action"]
     target = f" to {a['target_version']}" if a.get("target_version") else ""
@@ -168,14 +188,19 @@ def handle(diagnosis, approve=cli_approve, dry_run=False, verify=verify_recovery
     emit("thinking", f"Checking whether the alerts clear (up to {VERIFY_TIMEOUT_S}s)...")
 
     recovered, remaining = verify()
+    try:
+        after = settle()  # the "after" half of the before/after proof
+    except Exception:
+        after = None
     if recovered:
-        audit("verified", recovered=True)
+        audit("verified", recovered=True, metrics_after=after)
         say("Verified: alerts cleared. Incident resolved.")
-        emit("verification", "Verified: alerts cleared", tone="good")
+        emit("verification", "Verified: alerts cleared", tone="good", recovered=True, metrics=after)
         emit("outcome", "Incident resolved", tone="good")
         return "resolved"
-    audit("verification_failed", remaining=[a["alert"] for a in remaining])
+    audit("verification_failed", remaining=[a["alert"] for a in remaining], metrics_after=after)
     say(f"Alerts still firing: {[a['alert'] for a in remaining]}. Escalating to a human.")
-    emit("verification", "Alerts are still firing", ", ".join(a["alert"] for a in remaining), tone="bad")
+    emit("verification", "Alerts are still firing", ", ".join(a["alert"] for a in remaining), tone="bad",
+         recovered=False, metrics=after)
     emit("outcome", "Escalated to a human: the fix did not work", tone="bad")
     return "verification_failed"
