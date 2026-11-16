@@ -172,6 +172,15 @@
   form.a-input { display:flex; align-items:center; gap:10px; margin:10px 18px 16px; padding:6px 8px 6px 14px; border:1px solid #2a2a33; border-radius:8px; background:#0e0e12; } form.a-input:focus-within { border-color:var(--ac); }
   form.a-input b { color:var(--ac); } form.a-input input { flex:1; min-width:0; background:transparent; border:0; outline:0; color:#e4e7ee; font:14px var(--mono); padding:6px 0; } form.a-input input::placeholder { color:#5b6172; }
   form.a-input button { border:0; background:#1b1511; color:var(--ac); border-radius:6px; padding:5px 11px; font-size:15px; cursor:pointer; } form.a-input button:hover { background:#2a1d14; }
+
+  .ask.closed #thread, .ask.closed .qchips, .ask.closed form.a-input { display:none; } .ask-bar { cursor:pointer; user-select:none; } .ask-bar:hover { background:#1a1a22; } .ask-bar i { font-style:normal; display:inline-block; width:12px; }
+  #thread { max-height:170px; }
+  /* give the session more room: tighter incident block */
+  .kv { gap:7px 14px; } .kv li { font-size:14px; margin-bottom:0; } .ptab td { padding:2px 8px 2px 0; } .ptab th { padding:2px 8px 3px 0; } #incident { padding-bottom:12px; } .inc-title { margin-bottom:10px; padding:7px 18px; }
+  .a-head { padding:11px 18px; } .steps-bar { padding:7px 18px; }
+
+  #incident .inc-title { cursor:pointer; user-select:none; } #incident .inc-title:hover { background:#1a1a22; } .inc-title .arr { font-style:normal; display:inline-block; width:14px; } .inc-title .arr::before { content:"▾"; } #incident.collapsed .arr::before { content:"▸"; }
+  .inc-title .sum { display:none; color:var(--yellow); font-weight:700; } #incident.collapsed .sum { display:inline; } #incident.collapsed .kv { display:none; } #incident.collapsed { padding-bottom:0; } #incident.collapsed .inc-title { margin-bottom:0; border-bottom:0; }
 </style>
 </head>
 <body>
@@ -267,8 +276,8 @@
         <div id="incident"></div>
         <div class="steps-bar"><span>SESSION</span><label><input type="checkbox" id="verbose"> show reasoning</label></div>
         <div id="timeline"></div>
-        <div class="ask">
-          <div class="ask-bar"><span>ASK</span><span class="hint">read-only &middot; answers from live data</span></div>
+        <div class="ask closed" id="ask">
+          <div class="ask-bar" id="ask-toggle" role="button" tabindex="0" title="Show or hide the chat box"><span><i id="ask-arrow">&#9656;</i> ASK</span><span class="hint" id="ask-hint">chat &middot; click to open</span></div>
           <div id="thread"></div>
           <div class="qchips" id="qchips"></div>
           <form class="a-input" id="ask-form" autocomplete="off"><b>&#10095;</b><input id="ask-in" maxlength="200" placeholder="Ask about services, database, memory, CPU…"><button type="submit" title="Send">&#8629;</button></form>
@@ -399,14 +408,14 @@ function incidentStatus(run, approval) {
   return ['INVESTIGATING', 'live'];
 }
 function renderIncident(run, approval) {
-  if (!run.length) return `<div class="inc-title"><span>CURRENT INCIDENT</span></div><div class="idle">No active incident. <b>Watching for alerts…</b></div>`;
+  if (!run.length) return `<div class="inc-title"><span><i class="arr"></i>CURRENT INCIDENT</span></div><div class="idle">No active incident. <b>Watching for alerts…</b></div>`;
   const start = run.find(e => e.kind === 'run_started'), ver = [...run].reverse().find(e => e.kind === 'verification');
   const diag = [...run].reverse().find(e => e.kind === 'diagnosis'), prop = approval.proposal, [status, tone] = incidentStatus(run, approval);
   const alertName = start ? start.title.replace(/^Alert detected: /, '') : '—';
   const action = diag && diag.action ? diag.action : (prop ? prop.type : null), target = (diag && (diag.target_version || diag.target)) || (prop && (prop.target_version || prop.target)) || '';
   const conf = diag && typeof diag.confidence === 'number' ? Math.round(diag.confidence * 100) + '% confidence' : '';
   const ev = diag && diag.evidence ? diag.evidence.slice(0, 2).map(x => `<li>${esc(clip(x, 90))}</li>`).join('') : '';
-  let html = `<div class="inc-title"><span>CURRENT INCIDENT</span><span>${esc(clock(run[0].ts))}</span></div><div class="kv">
+  let html = `<div class="inc-title"><span><i class="arr"></i>CURRENT INCIDENT</span><span>${esc(clock(run[0].ts))}<b class="sum"> · ${esc(status)}</b></span></div><div class="kv">
     <div class="k">ALERT</div><div class="v">${esc(alertName)}</div>
     <div class="k">PROBLEM</div><div class="v big">${diag ? esc(clip(diag.root_cause, 110)) : '<span class="idle">analysing…</span>'}</div>`;
   if (ev) html += `<div class="k">EVIDENCE</div><div class="v"><ul>${ev}</ul></div>`;
@@ -511,6 +520,26 @@ async function askQ(q) {
   while (box.children.length > 60) box.removeChild(box.firstChild);
   box.scrollTop = box.scrollHeight;
 }
+
+function setAsk(open) {
+  $('ask').classList.toggle('closed', !open);
+  $('ask-arrow').innerHTML = open ? '&#9662;' : '&#9656;';
+  $('ask-hint').textContent = open ? 'read-only · answers from live data' : 'chat · click to open';
+  try { localStorage.setItem('askOpen', open ? '1' : '0'); } catch (e) {}
+  if (open) setTimeout(() => $('ask-in').focus(), 0);
+}
+$('ask-toggle').addEventListener('click', () => setAsk($('ask').classList.contains('closed')));
+$('ask-toggle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setAsk($('ask').classList.contains('closed')); } });
+let askWasOpen = false; try { askWasOpen = localStorage.getItem('askOpen') === '1'; } catch (e) {}
+setAsk(askWasOpen);
+
+let incCollapsed = false; try { incCollapsed = localStorage.getItem('incCollapsed') === '1'; } catch (e) {}
+$('incident').classList.toggle('collapsed', incCollapsed);
+$('incident').addEventListener('click', e => {   // click the CURRENT INCIDENT bar to fold the summary and give the session more room
+  if (!e.target.closest('.inc-title')) return;
+  const c = $('incident').classList.toggle('collapsed');
+  try { localStorage.setItem('incCollapsed', c ? '1' : '0'); } catch (err) {}
+});
 
 refresh(); setInterval(refresh, 1000);
 refreshAgent(); setInterval(refreshAgent, 1000);
