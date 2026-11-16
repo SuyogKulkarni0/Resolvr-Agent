@@ -94,8 +94,35 @@ def cli_approve(diagnosis):
     return answer.strip().lower() in ("y", "yes")
 
 
-def handle(diagnosis, approve=cli_approve, dry_run=False, verify=verify_recovery, say=print):
-    """Apply policy, ask a human, execute, verify, audit. Returns the outcome name."""
+def make_web_approver(timeout=600, interval=1.5):
+    """Approval through buttons on the web page. Anything but an explicit Approve is a No."""
+    def approve(diagnosis):
+        http("POST", "/api/agent/approval/request", {
+            "proposal": diagnosis["proposed_action"], "root_cause": diagnosis["root_cause"],
+            "confidence": diagnosis["confidence"]})
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            status = http("GET", "/api/agent/approval")["status"]
+            if status in ("approved", "denied"):
+                return status == "approved"
+            time.sleep(interval)
+        try:
+            http("POST", "/api/agent/approval/decision", {"decision": "denied"})
+        except Exception:
+            pass
+        return False  # timed out: default is No
+    return approve
+
+
+def _quiet(*args, **kwargs):
+    pass
+
+
+def handle(diagnosis, approve=cli_approve, dry_run=False, verify=verify_recovery, say=print, emit=_quiet):
+    """Apply policy, ask a human, execute, verify, audit. Returns the outcome name.
+
+    `emit(kind, title, detail, **extra)` mirrors each step to the live timeline.
+    """
     action = diagnosis["proposed_action"]
     audit("diagnosis", root_cause=diagnosis["root_cause"], proposed=action, confidence=diagnosis["confidence"])
 
@@ -103,17 +130,26 @@ def handle(diagnosis, approve=cli_approve, dry_run=False, verify=verify_recovery
     if not allowed:
         audit("escalated", reason=reason, proposed=action)
         say(f"No automatic action: {reason}. Escalating to a human.")
+        emit("policy", "Policy check: blocked", reason, tone="warn")
+        emit("outcome", "Escalated to a human: no automatic action taken", tone="warn")
         return "escalated"
+    emit("policy", "Policy check: passed", "Allowlisted action, confidence above the floor, under the rate limit.",
+         tone="good")
 
+    emit("thinking", "Waiting for a human to approve or deny...")
     if not approve(diagnosis):
         audit("denied", proposed=action, by="human")
         say("Action denied. Nothing was changed.")
+        emit("approval", "Human denied the action", "Nothing was changed.", tone="bad")
+        emit("outcome", "Action denied: no changes made", tone="warn")
         return "denied"
 
     audit("approved", proposed=action, by="human")
+    emit("approval", "Human approved the action", tone="good")
     if dry_run:
         audit("dry_run", proposed=action)
         say("Dry run: approved but not executed.")
+        emit("outcome", "Dry run: approved but not executed", tone="warn")
         return "dry_run"
 
     path, body = build_request(action)
@@ -122,15 +158,24 @@ def handle(diagnosis, approve=cli_approve, dry_run=False, verify=verify_recovery
     except Exception as e:
         audit("execution_failed", proposed=action, error=f"{type(e).__name__}: {e}")
         say(f"Execution failed: {e}. Escalating to a human.")
+        emit("action", "Execution failed", f"{type(e).__name__}: {e}", tone="bad")
+        emit("outcome", "Escalated to a human: execution failed", tone="bad")
         return "execution_failed"
     audit("executed", proposed=action, request={"path": path, "body": body}, response=response)
     say(f"Executed {action['type']}. Verifying recovery (up to {VERIFY_TIMEOUT_S}s)...")
+    emit("action", f"Executed: {action['type']}"
+         + (f" to {action['target_version']}" if action.get("target_version") else ""), tone="good")
+    emit("thinking", f"Checking whether the alerts clear (up to {VERIFY_TIMEOUT_S}s)...")
 
     recovered, remaining = verify()
     if recovered:
         audit("verified", recovered=True)
         say("Verified: alerts cleared. Incident resolved.")
+        emit("verification", "Verified: alerts cleared", tone="good")
+        emit("outcome", "Incident resolved", tone="good")
         return "resolved"
     audit("verification_failed", remaining=[a["alert"] for a in remaining])
     say(f"Alerts still firing: {[a['alert'] for a in remaining]}. Escalating to a human.")
+    emit("verification", "Alerts are still firing", ", ".join(a["alert"] for a in remaining), tone="bad")
+    emit("outcome", "Escalated to a human: the fix did not work", tone="bad")
     return "verification_failed"

@@ -20,6 +20,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 import guardrails
+from reporter import Reporter, no_report
 
 SHOP_URL = os.getenv("SHOP_URL", "http://localhost:8090")
 MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-5-5")
@@ -126,6 +127,33 @@ def summarize_logs(entries):
     return list(groups.values())
 
 
+TOOL_LABELS = {"get_alerts": "Checking which alerts are firing", "get_metrics": "Reading current metrics",
+               "get_logs": "Reading recent logs", "get_deploys": "Checking recent deploys"}
+
+
+def summarize_result(name, raw):
+    """One plain-English line describing a tool result, for the live timeline."""
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict) and "error" in data:
+            return f"Tool error: {data['error']}"
+        if name == "get_alerts":
+            return ("; ".join(f"{a['alert']} ({a['severity']}): {a['summary']}" for a in data)
+                    or "No alerts firing")
+        if name == "get_metrics":
+            return (f"{data['requests_per_sec']} req/s, {data['error_rate_pct']}% errors, "
+                    f"p95 {data['p95_latency_ms']} ms, memory {data['memory_mb']} MB, running {data['version']}")
+        if name == "get_logs":
+            top = sorted(data, key=lambda g: -g["count"])[:3]
+            return f"{len(data)} distinct messages. Most frequent: " + "; ".join(
+                f"{g['msg'][:90]} (x{g['count']})" for g in top) if data else "No log entries"
+        if name == "get_deploys":
+            return " -> ".join(f"{d['version']} ({d['note']})" for d in data) or "No deploys recorded"
+    except Exception:
+        pass
+    return raw[:200]
+
+
 def run_tool(name, args):
     """Execute one read-only tool. Returns a JSON string for the model."""
     try:
@@ -143,18 +171,24 @@ def run_tool(name, args):
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
-def run_triage(client, verbose=True, model=None):
-    """Run one investigation. Returns the diagnosis dict, or None if it never concluded."""
+def run_triage(client, verbose=True, model=None, emit=no_report):
+    """Run one investigation. Returns the diagnosis dict, or None if it never concluded.
+
+    `emit(kind, title, detail, **extra)` receives every step for the live timeline.
+    """
     model = model or MODEL
     messages = [{"role": "user", "content": "An alert may be firing on the shop service. Investigate and diagnose."}]
     for turn in range(MAX_TURNS):
+        emit("thinking", "Thinking about what to check next..." if turn else "Planning the investigation...")
         resp = client.messages.create(model=model, max_tokens=1500, system=SYSTEM_PROMPT,
                                       tools=TOOLS, messages=messages)
         messages.append({"role": "assistant", "content": resp.content})
         results = []
         for block in resp.content:
-            if block.type == "text" and verbose and block.text.strip():
-                print(f"  [agent] {block.text.strip()}")
+            if block.type == "text" and block.text.strip():
+                if verbose:
+                    print(f"  [agent] {block.text.strip()}")
+                emit("thought", "Agent's reasoning", block.text.strip()[:700])
             if block.type != "tool_use":
                 continue
             if block.name == "submit_diagnosis":
@@ -166,8 +200,11 @@ def run_triage(client, verbose=True, model=None):
                 continue
             if verbose:
                 print(f"  [tool]  {block.name}({json.dumps(block.input)})")
-            results.append({"type": "tool_result", "tool_use_id": block.id,
-                            "content": run_tool(block.name, block.input)})
+            emit("tool_call", TOOL_LABELS.get(block.name, block.name),
+                 json.dumps(block.input) if block.input else "")
+            raw = run_tool(block.name, block.input)
+            emit("tool_result", "Found", summarize_result(block.name, raw))
+            results.append({"type": "tool_result", "tool_use_id": block.id, "content": raw})
         if not results:  # model answered in text: accept a well-formed JSON diagnosis, else give up
             return extract_diagnosis(" ".join(b.text for b in resp.content if b.type == "text"))
         messages.append({"role": "user", "content": results})
@@ -194,6 +231,8 @@ def main():
     parser.add_argument("--backend", choices=["anthropic", "ollama"],
                         help="LLM backend (default: anthropic if ANTHROPIC_API_KEY is set, else ollama)")
     parser.add_argument("--dry-run", action="store_true", help="ask for approval but never execute")
+    parser.add_argument("--browser-approval", action="store_true",
+                        help="approve or deny actions with buttons on the web page instead of the terminal")
     parser.add_argument("--diagnose-only", action="store_true", help="skip the action phase entirely")
     args = parser.parse_args()
     backend = args.backend or ("anthropic" if os.getenv("ANTHROPIC_API_KEY") else "ollama")
@@ -206,18 +245,33 @@ def main():
         import ollama_client
         client, model = ollama_client.OllamaClient(), os.getenv("AGENT_MODEL", ollama_client.DEFAULT_MODEL)
     print(f"Backend: {backend} ({model})")
+    emit = Reporter()
+    approve = guardrails.make_web_approver() if args.browser_approval else guardrails.cli_approve
+    if args.browser_approval:
+        print(f"Approvals happen in the browser: open {os.getenv('SHOP_URL', 'http://localhost:8090')}")
 
     while True:
         alerts = fetch("/api/alerts")
         if alerts:
             print(f"{len(alerts)} alert(s) firing: {', '.join(a['alert'] for a in alerts)}. Investigating...")
-            diagnosis = run_triage(client, model=model)
+            emit("run_started", f"Alert detected: {', '.join(a['alert'] for a in alerts)}",
+                 "; ".join(a["summary"] for a in alerts), tone="bad")
+            diagnosis = run_triage(client, model=model, emit=emit)
             if diagnosis:
                 report(diagnosis)
-                if not args.diagnose_only:
-                    guardrails.handle(diagnosis, dry_run=args.dry_run)
+                act = diagnosis["proposed_action"]
+                emit("diagnosis", "Diagnosis ready",
+                     f"Proposed action: {act['type']}"
+                     + (f" to {act['target_version']}" if act.get("target_version") else "")
+                     + f" ({act['detail']}). Confidence {diagnosis['confidence']:.0%}.",
+                     root_cause=diagnosis["root_cause"], evidence=diagnosis["evidence"])
+                if args.diagnose_only:
+                    emit("outcome", "Diagnosis only: no action taken", tone="warn")
+                else:
+                    guardrails.handle(diagnosis, approve=approve, dry_run=args.dry_run, emit=emit)
             else:
                 print("Agent did not reach a diagnosis; escalate to a human.")
+                emit("outcome", "No diagnosis reached: escalating to a human", tone="bad")
             if args.watch:
                 time.sleep(60)  # avoid re-triaging the same incident immediately
         elif not args.watch:

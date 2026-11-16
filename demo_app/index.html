@@ -30,6 +30,26 @@
   #logs { background:#08101f; border:1px solid var(--line); border-radius:12px; padding:12px; font:12.5px/1.5 Consolas,monospace; height:230px; overflow:auto; white-space:pre-wrap; }
   .ERROR { color:var(--bad); } .WARN { color:var(--warn); } .INFO { color:var(--mute); }
   small { color:var(--mute); }
+  /* agent activity timeline */
+  #timeline { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 18px; max-height:430px; overflow:auto; }
+  #timeline .empty { color:var(--mute); padding:14px 0; }
+  .step { display:grid; grid-template-columns:34px 1fr auto; gap:10px; padding:11px 0; border-bottom:1px solid var(--line); align-items:start; }
+  .step.fresh { animation:fade .35s ease; }
+  .step:last-child { border-bottom:none; }
+  @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  .step .icon { font-size:20px; text-align:center; }
+  .step .title { font-weight:600; }
+  .step .detail { color:var(--mute); font-size:13.5px; margin-top:2px; white-space:pre-wrap; word-break:break-word; }
+  .step .time { color:var(--mute); font-size:12px; white-space:nowrap; }
+  .step.result .title { font-weight:400; color:var(--mute); } .step.result .detail { color:var(--text); }
+  .step.thinking .title { color:var(--mute); font-weight:400; font-style:italic; }
+  .step.diagnosis { background:rgba(59,130,246,.10); margin:6px -10px; padding:11px 10px; border-radius:10px; border-bottom:none; }
+  .step.good .title { color:var(--ok); } .step.bad .title { color:var(--bad); } .step.warn .title { color:var(--warn); }
+  .evidence { margin:6px 0 0; padding-left:18px; color:var(--text); } .evidence li { margin:2px 0; }
+  #approval .box { background:rgba(245,182,61,.12); border:1px solid var(--warn); border-radius:14px; padding:14px 18px; margin-bottom:12px; }
+  #approval .box b { color:var(--warn); } #approval .actions { margin-top:10px; display:flex; gap:10px; }
+  button.approve { border-color:var(--ok); } button.deny { border-color:var(--bad); }
+  .pill.live { border-color:var(--blue); color:var(--blue); } .pill.wait { border-color:var(--warn); color:var(--warn); } .pill.done { border-color:var(--ok); color:var(--ok); }
 </style>
 </head>
 <body>
@@ -47,6 +67,10 @@
 
   <h2>Active alerts</h2>
   <div id="alerts"></div>
+
+  <h2>Agent activity <span class="pill" id="agent-status">idle</span></h2>
+  <div id="approval"></div>
+  <div id="timeline"><div class="empty">The agent is idle. When an alert fires, every step it takes will appear here.</div></div>
 
   <h2>Break it (inject a failure)</h2>
   <div class="buttons">
@@ -88,7 +112,51 @@ async function refresh() {
     if (atBottom) box.scrollTop = box.scrollHeight;
   } catch (e) { $('alerts').innerHTML = '<div class="alert">Service unreachable</div>'; }
 }
+// ---- agent activity timeline. All text comes from the agent/model, so it is always escaped. ----
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ICONS = {run_started:'🔔', thinking:'💭', thought:'💬', tool_call:'🔧', tool_result:'↳', diagnosis:'🧠',
+               policy:'🛡️', approval:'👤', action:'⚙️', verification:'✅', outcome:'🏁'};
+let lastKey = '', seenId = null;  // only steps newer than seenId get the fade-in, so re-renders don't flicker
+function renderStep(e, t0) {
+  const secs = Math.max(0, Math.round((new Date(e.ts) - t0) / 1000));
+  let detail = e.detail ? `<div class="detail">${esc(e.detail)}</div>` : '';
+  if (e.kind === 'diagnosis' && e.evidence)
+    detail = `<div class="detail"><b>${esc(e.root_cause)}</b></div><ul class="evidence">` +
+      e.evidence.map(x => `<li>${esc(x)}</li>`).join('') + `</ul>` + detail;
+  const cls = [e.kind, e.tone, seenId !== null && e.id > seenId ? 'fresh' : ''].filter(Boolean).join(' ');
+  return `<div class="step ${esc(cls)}"><div class="icon">${ICONS[e.kind] || '•'}</div>` +
+         `<div><div class="title">${esc(e.title)}</div>${detail}</div><div class="time">+${secs}s</div></div>`;
+}
+async function refreshAgent() {
+  try {
+    const {events, approval} = await fetch('/api/agent/events').then(r => r.json());
+    const key = events.length + ':' + (events.length ? events[events.length-1].id : 0) + ':' + approval.status;
+    if (key === lastKey) return;
+    lastKey = key;
+    const t0 = events.length ? new Date(events[0].ts) : new Date();
+    const box = $('timeline'), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    box.innerHTML = events.length ? events.map(e => renderStep(e, t0)).join('')
+      : '<div class="empty">The agent is idle. When an alert fires, every step it takes will appear here.</div>';
+    if (atBottom) box.scrollTop = box.scrollHeight;
+    seenId = events.length ? events[events.length-1].id : (seenId ?? 0);
+    const last = events.length ? events[events.length-1].kind : null;
+    const st = $('agent-status');
+    if (approval.status === 'pending') { st.textContent = 'waiting for your approval'; st.className = 'pill wait'; }
+    else if (!last) { st.textContent = 'idle'; st.className = 'pill'; }
+    else if (last === 'outcome') { st.textContent = 'finished'; st.className = 'pill done'; }
+    else { st.textContent = 'investigating'; st.className = 'pill live'; }
+    const p = approval.proposal;
+    $('approval').innerHTML = approval.status === 'pending' && p
+      ? `<div class="box"><b>Approval needed.</b> The agent proposes <b>${esc(p.type)}${p.target_version ? ' to ' + esc(p.target_version) : ''}</b>
+         (confidence ${Math.round((approval.confidence || 0) * 100)}%).<div class="detail">${esc(approval.root_cause)}</div>
+         <div class="actions"><button class="approve" onclick="decide('approved')">Approve</button>
+         <button class="deny" onclick="decide('denied')">Deny</button></div></div>` : '';
+  } catch (e) { /* page keeps working if the endpoint is briefly unavailable */ }
+}
+function decide(d) { fetch('/api/agent/approval/decision', {method:'POST', body:JSON.stringify({decision:d})}).then(refreshAgent); }
+
 refresh(); setInterval(refresh, 1000);
+refreshAgent(); setInterval(refreshAgent, 1000);
 </script>
 </body>
 </html>

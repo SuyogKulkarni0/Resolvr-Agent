@@ -84,6 +84,16 @@ python agent/agent.py --dry-run        # approval flow, but never executes
 python agent/agent.py --diagnose-only  # Phase 2 behaviour
 ```
 
+## Watch the agent work, live
+
+The page at http://localhost:8090 has an **Agent activity** timeline. Every step the agent takes appears as it happens, like watching an engineer work: the alert it noticed, each check it ran and what it found, its reasoning, the diagnosis with evidence, the policy check, the human decision, the action, and whether the alerts cleared. Approval can be given with **Approve / Deny buttons on the page**.
+
+```bash
+python agent/agent.py --watch --browser-approval --backend ollama
+```
+
+Then click a failure button on the page. The agent notices the alert on its own and the timeline fills in. Events are posted to the demo app by `agent/reporter.py` (best effort: if the page is down the agent carries on) and the audit log stays the source of truth. All timeline text comes from the model, so the page escapes it before display.
+
 ## Phase 4: eval
 
 `eval/run_eval.py` injects each failure several times, runs the agent in read-only mode, scores the diagnosis against ground truth and writes `eval/RESULTS.md`:

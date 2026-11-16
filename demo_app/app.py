@@ -44,7 +44,26 @@ requests_window = deque()          # (timestamp, status, latency_ms)
 log_buffer = deque(maxlen=500)
 leak = []
 
+# Live agent activity, shown on the page as a timeline. Events are posted by the agent.
+agent_events = deque(maxlen=500)
+event_seq = [0]
+approval = {"status": "none", "proposal": None}  # none | pending | approved | denied
+
 tracemalloc.start()
+
+
+def clip(value, limit=2000):
+    return value[:limit] if isinstance(value, str) else value
+
+
+def add_agent_event(body):
+    """Store one event from the agent. Unknown fields are kept (e.g. diagnosis data)."""
+    with lock:
+        event_seq[0] += 1
+        event = {k: clip(v) for k, v in body.items() if k not in ("id", "ts")}
+        event.update(id=event_seq[0], ts=now())
+        agent_events.append(event)
+    return event
 
 
 def now():
@@ -168,6 +187,8 @@ def reset():
         state["fault"] = "none"
         requests_window.clear()
         log_buffer.clear()
+        agent_events.clear()
+        approval.update(status="none", proposal=None)
         open(DEPLOY_FILE, "w").close()
     set_version("v1.0.0", "baseline")
     log("INFO", "reset to healthy state", event="reset")
@@ -224,6 +245,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, [json.loads(l) for l in f][-20:])
             except FileNotFoundError:
                 return self.send(200, [])
+        if url.path == "/api/agent/events":
+            with lock:
+                return self.send(200, {"events": list(agent_events), "approval": dict(approval)})
+        if url.path == "/api/agent/approval":
+            with lock:
+                return self.send(200, dict(approval))
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -241,6 +268,22 @@ class Handler(BaseHTTPRequestHandler):
             set_version(version, body.get("note", "manual deploy"))
         elif path == "/admin/loadgen":
             state["loadgen"] = bool(body.get("enabled", True))
+        elif path == "/api/agent/event":
+            return self.send(200, add_agent_event(body))
+        elif path == "/api/agent/approval/request":  # agent asks a human to approve a proposed action
+            with lock:
+                approval.update(status="pending", proposal=body.get("proposal"),
+                                root_cause=clip(body.get("root_cause", "")), confidence=body.get("confidence"))
+            return self.send(200, dict(approval))
+        elif path == "/api/agent/approval/decision":  # the human clicks Approve or Deny in the page
+            decision = body.get("decision")
+            if decision not in ("approved", "denied"):
+                return self.send(400, {"error": "decision must be approved or denied"})
+            with lock:
+                if approval["status"] != "pending":
+                    return self.send(409, {"error": "no approval is pending"})
+                approval["status"] = decision
+            return self.send(200, dict(approval))
         elif path == "/admin/reset":
             reset()
         else:
