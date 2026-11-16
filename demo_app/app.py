@@ -146,7 +146,8 @@ def set_fault(mode):
         state["fault"] = mode
         if mode != "leak":
             leak.clear()
-    log("WARN", f"fault mode set to '{mode}' (simulated)", event="fault_change")
+    # Deliberately vague: naming the mode here would hand the answer to whoever reads the logs.
+    log("WARN", "runtime configuration changed", event="config_change")
 
 
 def set_version(version, note="deploy"):
@@ -157,11 +158,18 @@ def set_version(version, note="deploy"):
 
 
 def reset():
+    """Return to a clean healthy state, including logs and deploy history.
+
+    Clearing history matters: stale errors from a previous incident would otherwise show up
+    as evidence in the next one and mislead whoever (or whatever) is investigating.
+    """
     with lock:
         leak.clear()
         state["fault"] = "none"
         requests_window.clear()
-    set_version("v1.0.0", "reset to healthy baseline")
+        log_buffer.clear()
+        open(DEPLOY_FILE, "w").close()
+    set_version("v1.0.0", "baseline")
     log("INFO", "reset to healthy state", event="reset")
 
 

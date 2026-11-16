@@ -84,5 +84,16 @@ python agent/agent.py --dry-run        # approval flow, but never executes
 python agent/agent.py --diagnose-only  # Phase 2 behaviour
 ```
 
-## Next phases
-4. Eval over injected incidents, README diagram, demo GIF.
+## Phase 4: eval
+
+`eval/run_eval.py` injects each failure several times, runs the agent in read-only mode, scores the diagnosis against ground truth and writes `eval/RESULTS.md`:
+
+```bash
+python eval/run_eval.py --runs 3 --backend ollama     # all 5 scenarios x 3 runs; resumable with --resume
+cd eval && python -m unittest                         # scoring tests
+```
+
+Scoring is a keyword match on the root cause plus an allowed-action check (see `SCENARIOS`). Two things keep the eval honest: reset clears logs and deploy history so one incident's errors cannot leak into the next, and the config-change log line does not name the fault.
+
+## Next steps
+Demo recording and results table.
