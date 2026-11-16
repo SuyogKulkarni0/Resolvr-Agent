@@ -39,7 +39,13 @@ SCENARIOS = {
         "label": "Memory leak",
         "inject": ("/admin/fault", {"mode": "leak"}),
         "cause_keywords": ["memory", "leak"],
-        "actions": {"clear_fault", "restart", "escalate_to_human"},
+        "actions": {"clear_fault", "restart", "restart_service", "escalate_to_human"},
+    },
+    "rogue_process": {
+        "label": "Runaway process",
+        "inject": ("/admin/fault", {"mode": "rogue_process"}),
+        "cause_keywords": ["report-export", "runaway", "rogue", "process"],
+        "actions": {"kill_process"}, "kill_target": "report-export",
     },
     "errors": {
         "label": "Database errors",
@@ -73,6 +79,8 @@ def score(scenario, diagnosis):
     action_ok = action["type"] in spec["actions"]
     if "rollback_target" in spec and action["type"] == "rollback":
         action_ok = action_ok and action.get("target_version") == spec["rollback_target"]
+    if "kill_target" in spec and action["type"] == "kill_process":
+        action_ok = action_ok and action.get("target") == spec["kill_target"]
     return {"reached": True, "cause_ok": cause_ok, "action_ok": action_ok, "correct": cause_ok and action_ok}
 
 

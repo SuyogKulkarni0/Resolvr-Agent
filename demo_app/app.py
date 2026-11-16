@@ -10,6 +10,12 @@ investigate:
   * GET  /health           liveness check
   * GET  /api/metrics      rolling metrics (req/s, error rate, p95 latency, memory)
   * GET  /api/alerts       alert rules evaluated against the metrics
+  * GET  /api/processes    simulated process table (like `ps aux --sort=-%mem`)
+  * GET  /api/services     health of shop-api, database, inventory-service and helpers
+  * GET  /api/system       host CPU and memory
+  * POST /api/chat         {"message": "how is the database?"}  read-only answer from live data
+  * POST /admin/kill       {"name": "report-export"}   terminate the runaway process
+  * POST /admin/restart    {"service": "shop"}
   * GET  /api/logs?n=50    recent structured logs
   * GET  /api/deploys      deploy history
   * POST /admin/fault      {"mode": "none|leak|errors|slow|inventory_down"}
@@ -27,6 +33,8 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+import chat
+
 PORT = int(os.getenv("PORT", "8080"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.getenv("LOG_DIR", os.path.join(BASE, "..", "data"))
@@ -34,9 +42,16 @@ os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
 DEPLOY_FILE = os.path.join(LOG_DIR, "deploys.jsonl")
 
-FAULTS = {"none", "leak", "errors", "slow", "inventory_down"}
+FAULTS = {"none", "leak", "errors", "slow", "inventory_down", "rogue_process"}
 VERSIONS = {"v1.0.0", "v1.1.0"}
-BASELINE_MB = 35.0  # rough idle footprint of the interpreter + app
+BASELINE_MB = 35.0  # idle footprint: shop-api 20 + log-shipper 9 + metrics-exporter 6
+
+# Simulated host processes. shop-api is the real server; the two helpers are fixed background
+# processes. A "rogue_process" fault adds report-export, a runaway job that eats memory and CPU.
+BACKGROUND = [("log-shipper", "root", 1187, 9.0, 1.2), ("metrics-exporter", "monitor", 1204, 6.0, 0.8)]
+ROGUE = {"name": "report-export", "user": "batch", "pid": 4121, "cmd": "/opt/batch/report-export --full --no-limit"}
+ROGUE_START_MB, ROGUE_GROWTH_MB_S, ROGUE_CAP_MB = 20.0, 5.0, 220.0
+rogue = {"started": None}           # started = epoch seconds while the runaway process is alive
 
 state = {"fault": "none", "version": "v1.0.0", "loadgen": True}
 lock = threading.Lock()
@@ -78,7 +93,7 @@ def mirror_agent_event(e):
     if kind == "run_started":
         log_check("AGENT", "triage-agent", "alert received, investigating")
     elif kind == "diagnosis":
-        target = f" to {e['target_version']}" if e.get("target_version") else ""
+        target = f" to {e['target_version']}" if e.get("target_version") else (f" {e['target']}" if e.get("target") else "")
         log_check("AGENT", "triage-agent", f"proposes {e.get('action', 'action')}{target}", "PROPOSED")
     elif kind == "approval":
         log_check("AGENT", "operator", str(e.get("title", "")).lower().replace("human ", ""),
@@ -156,8 +171,26 @@ def process_order():
     return status, latency
 
 
+def rogue_mem():
+    started = rogue["started"]
+    return 0.0 if started is None else min(ROGUE_CAP_MB, ROGUE_START_MB + ROGUE_GROWTH_MB_S * (time.time() - started))
+
+
 def memory_mb():
-    return round(BASELINE_MB + tracemalloc.get_traced_memory()[0] / 1e6, 1)
+    return round(BASELINE_MB + tracemalloc.get_traced_memory()[0] / 1e6 + rogue_mem(), 1)
+
+
+def processes():
+    """What `ps aux --sort=-%mem` would show: the simulated host processes, biggest memory first."""
+    rows = [{"pid": os.getpid(), "name": "shop-api", "user": "shop", "cmd": "python demo_app/app.py",
+             "mem_mb": round(20.0 + tracemalloc.get_traced_memory()[0] / 1e6, 1), "cpu_pct": round(random.uniform(4, 9), 1)}]
+    for name, user, pid, mem, cpu in BACKGROUND:
+        rows.append({"pid": pid, "name": name, "user": user, "cmd": f"/usr/bin/{name}", "mem_mb": mem,
+                     "cpu_pct": round(cpu + random.uniform(0, 0.4), 1)})
+    if rogue["started"] is not None:
+        rows.append({"pid": ROGUE["pid"], "name": ROGUE["name"], "user": ROGUE["user"], "cmd": ROGUE["cmd"],
+                     "mem_mb": round(rogue_mem(), 1), "cpu_pct": round(random.uniform(88, 99), 1)})
+    return sorted(rows, key=lambda r: -r["mem_mb"])
 
 
 def metrics():
@@ -207,6 +240,7 @@ def set_fault(mode):
         state["fault"] = mode
         if mode != "leak":
             leak.clear()
+        rogue["started"] = time.time() if mode == "rogue_process" else None
     # Deliberately vague: naming the mode here would hand the answer to whoever reads the logs.
     log("WARN", "runtime configuration changed", event="config_change")
     log_check("CHANGE", "config", "runtime configuration changed")
@@ -220,6 +254,82 @@ def set_version(version, note="deploy"):
     log_check("CHANGE", "deploy", f"{version} deployed ({note})")
 
 
+CORES = 2
+
+
+def system():
+    """Host-level numbers: CPU is the sum of per-process CPU spread over the cores."""
+    procs = processes()
+    return {"cpu_pct": round(min(100.0, sum(p["cpu_pct"] for p in procs) / CORES), 1), "cores": CORES,
+            "memory_mb": memory_mb(), "processes": len(procs)}
+
+
+def services():
+    """Health of each component the shop depends on, derived from the current faults and metrics."""
+    m, fault = metrics(), state["fault"]
+    api = "down" if m["error_rate_pct"] > 50 else "degraded" if m["error_rate_pct"] > 10 or m["p95_latency_ms"] > 1000 else "up"
+    out = [{"name": "shop-api", "kind": "service", "status": api,
+            "detail": f"{m['requests_per_sec']} req/s, {m['error_rate_pct']}% errors, p95 {m['p95_latency_ms']} ms, {m['version']}"}]
+    if fault == "errors":
+        out.append({"name": "postgres (database)", "kind": "database", "status": "degraded",
+                    "detail": "connection pool exhausted (max=10, waiting=37)"})
+    else:
+        out.append({"name": "postgres (database)", "kind": "database", "status": "up",
+                    "detail": f"pool {random.randint(2, 5)}/10 connections, query {random.randint(3, 6)} ms"})
+    out.append({"name": "inventory-service", "kind": "service", "status": "down" if fault == "inventory_down" else "up",
+                "detail": "connection refused (inventory:8081)" if fault == "inventory_down" else f"reachable, {random.randint(9, 15)} ms"})
+    for name, user, pid, mem, cpu in BACKGROUND:
+        out.append({"name": name, "kind": "process", "status": "up", "detail": f"pid {pid}, {mem} MB"})
+    if rogue["started"] is not None:
+        out.append({"name": ROGUE["name"], "kind": "process", "status": "degraded",
+                    "detail": f"pid {ROGUE['pid']}, {round(rogue_mem(), 1)} MB, runaway CPU"})
+    return out
+
+
+def read_logs(n):
+    with lock:
+        return list(log_buffer)[-n:]
+
+
+def read_deploys():
+    try:
+        with open(DEPLOY_FILE, encoding="utf-8") as f:
+            return [json.loads(l) for l in f][-20:]
+    except FileNotFoundError:
+        return []
+
+
+def chat_answer(question):
+    return chat.answer(question, {"metrics": metrics, "alerts": alerts, "processes": processes, "services": services,
+                                  "system": system, "logs": read_logs, "deploys": read_deploys})
+
+
+def kill_process(name, pid=None):
+    """Terminate a simulated process. Only the runaway job can be killed; shop-api and the helpers cannot."""
+    with lock:
+        if name != ROGUE["name"] or rogue["started"] is None or pid not in (None, ROGUE["pid"]):
+            return False
+        rogue["started"] = None
+        if state["fault"] == "rogue_process":
+            state["fault"] = "none"
+    log("WARN", f"process {name} (pid {ROGUE['pid']}) terminated by operator (SIGTERM)", event="process_killed")
+    log_check("ACTION", name, f"pid {ROGUE['pid']} terminated (SIGTERM)", "DONE")
+    return True
+
+
+def restart_service(service):
+    """Restart the shop service: frees leaked memory. (Simulated: the leak trigger is cleared too.)"""
+    if service != "shop":
+        return False
+    with lock:
+        leak.clear()
+        if state["fault"] == "leak":
+            state["fault"] = "none"
+    log("INFO", "service shop restarted", event="restart")
+    log_check("ACTION", "shop", "service restarted, memory released", "DONE")
+    return True
+
+
 def reset():
     """Return to a clean healthy state, including logs and deploy history.
 
@@ -228,6 +338,7 @@ def reset():
     """
     with lock:
         leak.clear()
+        rogue["started"] = None
         state["fault"] = "none"
         requests_window.clear()
         log_buffer.clear()
@@ -327,6 +438,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, metrics())
         if url.path == "/api/alerts":
             return self.send(200, alerts())
+        if url.path == "/api/processes":
+            return self.send(200, processes())
+        if url.path == "/api/services":
+            return self.send(200, services())
+        if url.path == "/api/system":
+            return self.send(200, system())
         if url.path == "/api/logs":
             n = int(parse_qs(url.query).get("n", ["50"])[0])
             with lock:
@@ -365,6 +482,14 @@ class Handler(BaseHTTPRequestHandler):
             if version not in VERSIONS:
                 return self.send(400, {"error": f"version must be one of {sorted(VERSIONS)}"})
             set_version(version, body.get("note", "manual deploy"))
+        elif path == "/api/chat":  # read-only questions from the dashboard chat box
+            return self.send(200, chat_answer(str(body.get("message", ""))[:300]))
+        elif path == "/admin/kill":
+            if not kill_process(body.get("name"), body.get("pid")):
+                return self.send(409, {"error": "no such killable process"})
+        elif path == "/admin/restart":
+            if not restart_service(body.get("service")):
+                return self.send(409, {"error": "unknown service"})
         elif path == "/admin/loadgen":
             state["loadgen"] = bool(body.get("enabled", True))
         elif path == "/api/agent/event":

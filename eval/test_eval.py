@@ -12,6 +12,14 @@ def diag(cause, kind, target=None):
 
 
 class ScoreTest(unittest.TestCase):
+    def test_runaway_process_needs_kill_of_the_right_target(self):
+        def d(kind, target):
+            return {"root_cause": "report-export is using the memory", "evidence": [], "confidence": 0.9,
+                    "proposed_action": {"type": kind, "detail": "d", "target": target}}
+        self.assertTrue(ev.score("rogue_process", d("kill_process", "report-export"))["correct"])
+        self.assertFalse(ev.score("rogue_process", d("kill_process", "shop-api"))["action_ok"])
+        self.assertFalse(ev.score("rogue_process", d("restart_service", "shop"))["action_ok"])
+
     def test_correct_rollback(self):
         s = ev.score("bad_deploy", diag("Release v1.1.0 broke checkout", "rollback", "v1.0.0"))
         self.assertTrue(s["correct"])

@@ -31,7 +31,7 @@ Then click **deploy v1.1.0 (bad)** under *Failure injection*. The alert fires, t
 
 1. The service's **monitor loop** evaluates alert rules every second; an alert fires.
 2. The **agent** wakes up and uses an LLM to decide what to check.
-3. It can only call four **read-only tools**: alerts, metrics, logs, deploy history. It ends with a structured diagnosis: root cause, evidence, proposed action, confidence.
+3. It can only call five **read-only tools**: alerts, metrics, logs, deploy history and the process list (like `ps aux --sort=-%mem`). It ends with a structured diagnosis: root cause, evidence, proposed action, confidence.
 4. **Guardrails** (plain code, not the model) decide whether the proposal may run, then ask a human to approve in the browser.
 5. If approved, the action is applied (roll back, or clear the fault).
 6. The agent **verifies** recovery and the *Live checks* stream shows the metric going back under its limit. Every step is in an audit log.
@@ -44,6 +44,8 @@ Then click **deploy v1.1.0 (bad)** under *Failure injection*. The alert fires, t
 | **Alerts** | Alertmanager-style cards | Which rules are firing, for how long, plus recently resolved |
 | **Live checks** | A PASS/FAIL measurement stream | Confirms the problem, the fix and the recovery, in order |
 | **Service logs** | Real syslog (`journalctl -u shop -f`) | What the application itself writes |
+| **Processes** | A `ps`-style table with memory bars | Which process is using the memory and CPU |
+| **Ask (chat box)** | Type or click: services, database, memory, CPU, alerts | Instant read-only answers from live data. No model call, so it is fast, and it cannot change anything |
 | **Failure injection** | Terminal-style buttons | Break the service on purpose, or put it back |
 | **Triage Agent** | Separate panel with step cards | What the AI is doing, the incident summary, and the Approve / Deny buttons |
 
@@ -64,7 +66,8 @@ CHECK   error_rate_pct  8.3% <= 10%                                      PASS
 
 | Button | What happens | Alert that fires |
 |---|---|---|
-| memory-leak | Each request retains 1 MB | HighMemory |
+| memory-leak | Each request retains 1 MB inside `shop-api` | HighMemory (fix: restart the service) |
+| runaway-process | A separate `report-export` job eats memory and CPU | HighMemory (fix: kill that process; the before/after process table is the proof) |
 | db-errors | About half of requests fail: "connection pool exhausted" | HighErrorRate |
 | slow-responses | 1.2-2.5 s per request | HighLatencyP95 |
 | dependency-down | Every order returns 502, "inventory unreachable" | HighErrorRate |
@@ -76,7 +79,7 @@ The model only proposes. `agent/guardrails.py` decides whether anything runs.
 
 | Guardrail | Rule |
 |---|---|
-| Allowlist | Only `rollback` and `clear_fault`. Anything else (for example `restart`) escalates to a human |
+| Allowlist | Only `rollback` (to a known-good version), `clear_fault`, `kill_process` (the named runaway job only, never `shop-api`) and `restart_service` (the shop only). Anything else escalates to a human |
 | Known-good target | Rollback only to versions in `KNOWN_GOOD_VERSIONS` |
 | Confidence floor | Below 70% the agent escalates and does not even ask for approval |
 | Rate limit | At most 3 executed actions per hour |

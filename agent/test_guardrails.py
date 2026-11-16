@@ -85,6 +85,34 @@ class GuardrailTest(unittest.TestCase):
             self.assertEqual(self.run_handle(diag("clear_fault", target=None)), "resolved")
         http.assert_any_call("POST", "/admin/fault", {"mode": "none"})
 
+    @staticmethod
+    def action_diag(kind, target):
+        return {"root_cause": "x", "evidence": ["y"], "confidence": 0.9,
+                "proposed_action": {"type": kind, "detail": "d", "target": target}}
+
+    def test_kill_runaway_process_executes(self):
+        with mock.patch.object(guardrails, "http", return_value={"ok": True}) as http:
+            self.assertEqual(self.run_handle(GuardrailTest.action_diag("kill_process", "report-export")), "resolved")
+        http.assert_any_call("POST", "/admin/kill", {"name": "report-export"})
+
+    def test_cannot_kill_the_shop_itself(self):
+        with mock.patch.object(guardrails, "http") as http:
+            self.assertEqual(self.run_handle(GuardrailTest.action_diag("kill_process", "shop-api")), "escalated")
+        http.assert_not_called()
+
+    def test_kill_without_a_target_is_blocked(self):
+        with mock.patch.object(guardrails, "http") as http:
+            self.assertEqual(self.run_handle(GuardrailTest.action_diag("kill_process", None)), "escalated")
+        http.assert_not_called()
+
+    def test_restart_service_executes_only_for_shop(self):
+        with mock.patch.object(guardrails, "http", return_value={"ok": True}) as http:
+            self.assertEqual(self.run_handle(GuardrailTest.action_diag("restart_service", "shop")), "resolved")
+        http.assert_any_call("POST", "/admin/restart", {"service": "shop"})
+        with mock.patch.object(guardrails, "http") as http:
+            self.assertEqual(self.run_handle(GuardrailTest.action_diag("restart_service", "database")), "escalated")
+        http.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

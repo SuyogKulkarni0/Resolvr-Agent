@@ -3,7 +3,8 @@ Phase 3: guarded actions.
 
 The model only *proposes* an action. This module decides whether it may run:
 
-  1. Allowlist      only `rollback` (to a known-good version) and `clear_fault`
+  1. Allowlist      only `rollback` (to a known-good version), `clear_fault`, `kill_process`
+                    (named runaway jobs only) and `restart_service` (the shop only)
   2. Confidence     below MIN_CONFIDENCE the agent escalates instead of acting
   3. Rate limit     at most MAX_ACTIONS_PER_HOUR executed actions
   4. Human approval nothing runs without an explicit "y" (default is No)
@@ -23,7 +24,9 @@ AUDIT_FILE = os.path.join(DATA_DIR, "audit.jsonl")
 MIN_CONFIDENCE = 0.7
 MAX_ACTIONS_PER_HOUR = 3
 KNOWN_GOOD_VERSIONS = {"v1.0.0"}
-ALLOWED_ACTIONS = {"rollback", "clear_fault"}
+ALLOWED_ACTIONS = {"rollback", "clear_fault", "kill_process", "restart_service"}
+KILLABLE_PROCESSES = {"report-export"}   # the shop's own processes (shop-api, ...) are never on this list
+RESTARTABLE_SERVICES = {"shop"}
 VERIFY_TIMEOUT_S = 45
 VERIFY_INTERVAL_S = 3
 
@@ -66,6 +69,12 @@ def check_policy(diagnosis):
     if kind == "rollback" and action.get("target_version") not in KNOWN_GOOD_VERSIONS:
         return False, (f"rollback target '{action.get('target_version')}' is not a known-good "
                        f"version {sorted(KNOWN_GOOD_VERSIONS)}")
+    if kind == "kill_process" and action.get("target") not in KILLABLE_PROCESSES:
+        return False, (f"process '{action.get('target')}' is not on the kill allowlist "
+                       f"{sorted(KILLABLE_PROCESSES)}")
+    if kind == "restart_service" and action.get("target") not in RESTARTABLE_SERVICES:
+        return False, (f"service '{action.get('target')}' is not on the restart allowlist "
+                       f"{sorted(RESTARTABLE_SERVICES)}")
     if actions_in_last_hour() >= MAX_ACTIONS_PER_HOUR:
         return False, f"rate limit: {MAX_ACTIONS_PER_HOUR} actions already executed in the last hour"
     return True, "within policy"
@@ -74,6 +83,10 @@ def check_policy(diagnosis):
 def build_request(action):
     if action["type"] == "rollback":
         return "/admin/deploy", {"version": action["target_version"], "note": "automated rollback (approved)"}
+    if action["type"] == "kill_process":
+        return "/admin/kill", {"name": action["target"]}
+    if action["type"] == "restart_service":
+        return "/admin/restart", {"service": action["target"]}
     return "/admin/fault", {"mode": "none"}
 
 
@@ -109,7 +122,7 @@ def settle(timeout=40, interval=3):
 
 def cli_approve(diagnosis):
     a = diagnosis["proposed_action"]
-    target = f" to {a['target_version']}" if a.get("target_version") else ""
+    target = f" to {a['target_version']}" if a.get("target_version") else (f" {a['target']}" if a.get("target") else "")
     answer = input(f"Approve '{a['type']}{target}'? Confidence {diagnosis['confidence']:.0%}. [y/N]: ")
     return answer.strip().lower() in ("y", "yes")
 
@@ -184,7 +197,8 @@ def handle(diagnosis, approve=cli_approve, dry_run=False, verify=verify_recovery
     audit("executed", proposed=action, request={"path": path, "body": body}, response=response)
     say(f"Executed {action['type']}. Verifying recovery (up to {VERIFY_TIMEOUT_S}s)...")
     emit("action", f"Executed: {action['type']}"
-         + (f" to {action['target_version']}" if action.get("target_version") else ""), tone="good")
+         + (f" to {action['target_version']}" if action.get("target_version") else
+            (f" {action['target']}" if action.get("target") else "")), tone="good")
     emit("thinking", f"Checking whether the alerts clear (up to {VERIFY_TIMEOUT_S}s)...")
 
     recovered, remaining = verify()
@@ -192,15 +206,20 @@ def handle(diagnosis, approve=cli_approve, dry_run=False, verify=verify_recovery
         after = settle()  # the "after" half of the before/after proof
     except Exception:
         after = None
+    try:
+        procs_after = http("GET", "/api/processes")[:5]
+    except Exception:
+        procs_after = None
     if recovered:
         audit("verified", recovered=True, metrics_after=after)
         say("Verified: alerts cleared. Incident resolved.")
-        emit("verification", "Verified: alerts cleared", tone="good", recovered=True, metrics=after)
+        emit("verification", "Verified: alerts cleared", tone="good", recovered=True, metrics=after,
+             processes=procs_after)
         emit("outcome", "Incident resolved", tone="good")
         return "resolved"
     audit("verification_failed", remaining=[a["alert"] for a in remaining], metrics_after=after)
     say(f"Alerts still firing: {[a['alert'] for a in remaining]}. Escalating to a human.")
     emit("verification", "Alerts are still firing", ", ".join(a["alert"] for a in remaining), tone="bad",
-         recovered=False, metrics=after)
+         recovered=False, metrics=after, processes=procs_after)
     emit("outcome", "Escalated to a human: the fix did not work", tone="bad")
     return "verification_failed"

@@ -34,10 +34,14 @@ Method:
 1. Start with get_alerts and get_metrics to see what is wrong and how bad.
 2. Read recent logs for error messages, and check get_deploys: did a deploy happen
    shortly before the problem began? Compare log version tags with the deploy history.
-3. Form the most likely root cause from evidence only. Do not invent facts.
+3. If memory or CPU is high, call get_processes: is one separate process using most of it,
+   or is the shop-api process itself growing?
+4. Form the most likely root cause from evidence only. Do not invent facts.
 
 Proposed action must be one of: rollback (also set target_version to the last good
-version from the deploy history), clear_fault, restart, escalate_to_human, none.
+version from the deploy history), kill_process (set target to the process name, only for a
+runaway process that is not part of the shop), restart_service (set target to "shop", for a
+service whose own memory keeps growing), clear_fault, escalate_to_human, none.
 Your action is only a proposal: a policy layer and a human approve it before anything runs.
 Do not write long explanations. When you have enough evidence, call submit_diagnosis
 directly, with a short root_cause and 2-4 short evidence items. Use escalate_to_human when evidence is weak or conflicting.
@@ -54,6 +58,9 @@ TOOLS = [
          "n": {"type": "integer", "description": "How many entries, 1-100", "default": 30}}}},
     {"name": "get_deploys", "description": "Deploy history with timestamps and versions: what changed recently.",
      "input_schema": {"type": "object", "properties": {}}},
+    {"name": "get_processes",
+     "description": "Running processes sorted by memory, like `ps aux --sort=-%mem`: pid, name, user, memory MB, CPU %.",
+     "input_schema": {"type": "object", "properties": {}}},
     {"name": "submit_diagnosis",
      "description": "Submit the final diagnosis. Call exactly once when the investigation is complete.",
      "input_schema": {"type": "object", "properties": {
@@ -61,9 +68,11 @@ TOOLS = [
          "evidence": {"type": "array", "items": {"type": "string"},
                       "description": "Specific observations that support the root cause"},
          "proposed_action": {"type": "object", "properties": {
-             "type": {"type": "string", "enum": ["rollback", "clear_fault", "restart", "escalate_to_human", "none"]},
+             "type": {"type": "string", "enum": ["rollback", "kill_process", "restart_service", "clear_fault",
+                                                 "escalate_to_human", "none"]},
              "detail": {"type": "string"},
-             "target_version": {"type": "string", "description": "Required for rollback: the version to roll back to"}},
+             "target_version": {"type": "string", "description": "Required for rollback: the version to roll back to"},
+             "target": {"type": "string", "description": "Required for kill_process (process name) and restart_service (service name)"}},
              "required": ["type", "detail"]},
          "confidence": {"type": "number", "minimum": 0, "maximum": 1}},
       "required": ["root_cause", "evidence", "proposed_action", "confidence"]}},
@@ -75,7 +84,7 @@ def fetch(path):
         return json.loads(r.read())
 
 
-ACTION_TYPES = {"rollback", "clear_fault", "restart", "escalate_to_human", "none"}
+ACTION_TYPES = {"rollback", "kill_process", "restart_service", "clear_fault", "restart", "escalate_to_human", "none"}
 
 
 def valid_diagnosis(d):
@@ -128,7 +137,23 @@ def summarize_logs(entries):
 
 
 TOOL_LABELS = {"get_alerts": "Checking which alerts are firing", "get_metrics": "Reading current metrics",
-               "get_logs": "Reading recent logs", "get_deploys": "Checking recent deploys"}
+               "get_logs": "Reading recent logs", "get_deploys": "Checking recent deploys",
+               "get_processes": "Listing processes by memory"}
+
+
+def action_label(action):
+    """'rollback to v1.0.0', 'kill_process report-export', ... for display."""
+    if action.get("target_version"):
+        return f"{action['type']} to {action['target_version']}"
+    return f"{action['type']} {action['target']}" if action.get("target") else action["type"]
+
+
+def top_processes(n=5):
+    """The process table for the before/after proof, or None if the app cannot supply it."""
+    try:
+        return fetch("/api/processes")[:n]
+    except Exception:
+        return None
 
 
 def summarize_result(name, raw):
@@ -149,6 +174,9 @@ def summarize_result(name, raw):
                 f"{g['msg'][:90]} (x{g['count']})" for g in top) if data else "No log entries"
         if name == "get_deploys":
             return " -> ".join(f"{d['version']} ({d['note']})" for d in data) or "No deploys recorded"
+        if name == "get_processes":
+            return "Top by memory: " + "; ".join(
+                f"{p['name']} (pid {p['pid']}) {p['mem_mb']} MB, {p['cpu_pct']}% CPU" for p in data[:3])
     except Exception:
         pass
     return raw[:200]
@@ -166,6 +194,8 @@ def run_tool(name, args):
             return json.dumps(summarize_logs(fetch(f"/api/logs?n={n}")))
         if name == "get_deploys":
             return json.dumps(fetch("/api/deploys"))
+        if name == "get_processes":
+            return json.dumps(fetch("/api/processes"))
         return json.dumps({"error": f"unknown tool {name}"})
     except Exception as e:  # tool failures go back to the model, not a crash
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
@@ -182,7 +212,7 @@ def announce_incident(emit, alerts):
         before = None
     emit("run_started", f"Alert detected: {', '.join(a['alert'] for a in alerts)}",
          "; ".join(a["summary"] for a in alerts), tone="bad",
-         alerts=[a["alert"] for a in alerts], metrics=before)
+         alerts=[a["alert"] for a in alerts], metrics=before, processes=top_processes())
 
 
 def run_triage(client, verbose=True, model=None, emit=no_report):
@@ -274,12 +304,10 @@ def main():
                 report(diagnosis)
                 act = diagnosis["proposed_action"]
                 emit("diagnosis", "Diagnosis ready",
-                     f"Proposed action: {act['type']}"
-                     + (f" to {act['target_version']}" if act.get("target_version") else "")
-                     + f" ({act['detail']}). Confidence {diagnosis['confidence']:.0%}.",
+                     f"Proposed action: {action_label(act)} ({act['detail']}). Confidence {diagnosis['confidence']:.0%}.",
                      root_cause=diagnosis["root_cause"], evidence=diagnosis["evidence"],
                      confidence=diagnosis["confidence"], action=act["type"],
-                     target_version=act.get("target_version", ""))
+                     target_version=act.get("target_version", ""), target=act.get("target", ""))
                 if args.diagnose_only:
                     emit("outcome", "Diagnosis only: no action taken", tone="warn")
                 else:

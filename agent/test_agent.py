@@ -77,7 +77,8 @@ class AgentLoopTest(unittest.TestCase):
 
     def test_agent_has_no_write_tools(self):
         names = {t["name"] for t in agent.TOOLS}
-        self.assertEqual(names, {"get_alerts", "get_metrics", "get_logs", "get_deploys", "submit_diagnosis"})
+        self.assertEqual(names, {"get_alerts", "get_metrics", "get_logs", "get_deploys", "get_processes",
+                                 "submit_diagnosis"})
 
 
 if __name__ == "__main__":
