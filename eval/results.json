@@ -1,0 +1,444 @@
+{
+  "backend": "ollama",
+  "model": "qwen2.5:7b",
+  "results": [
+    {
+      "scenario": "bad_deploy",
+      "run": 1,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "Checkout module bug introduced in v1.1.0",
+        "evidence": [
+          "5xx error rate is 32.6%",
+          "KeyError in checkout module at line 88",
+          "Error started shortly after v1.1.0 deploy",
+          "No issues in v1.0.0"
+        ],
+        "proposed_action": {
+          "detail": "Rollback to v1.0.0 to resolve the bug in the checkout module",
+          "target_version": "v1.0.0",
+          "type": "rollback"
+        },
+        "confidence": 0.95
+      },
+      "seconds": 110,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": true,
+        "correct": true
+      }
+    },
+    {
+      "scenario": "leak",
+      "run": 1,
+      "alerts": [
+        "HighMemory"
+      ],
+      "error": null,
+      "diagnosis": {
+        "proposed_action": {
+          "type": "rollback",
+          "detail": "Rollback to the previous version to address the memory leak.",
+          "target_version": "v1.0.0"
+        },
+        "root_cause": "Memory leak in v1.0.0",
+        "evidence": [
+          "Memory usage is 228.4 MB (above threshold of 150 MB)",
+          "Recent deployment (v1.0.0) with no recent logs indicating an error or a change in the load",
+          "No recent changes in the load or configuration that would explain the memory increase"
+        ],
+        "confidence": 0.9
+      },
+      "seconds": 160,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "errors",
+      "run": 1,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "Database connection pool exhausted",
+        "evidence": [
+          "5xx error rate increased from 40.6% to 56.6%",
+          "Database connection pool exhausted error in logs",
+          "Memory usage stable"
+        ],
+        "proposed_action": {
+          "detail": "Restart the service to release database connection pool",
+          "type": "restart"
+        },
+        "confidence": 0.9
+      },
+      "seconds": 107,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "slow",
+      "run": 1,
+      "alerts": [
+        "HighLatencyP95"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "Runtime configuration change at 09:44:05",
+        "evidence": [
+          "p95 latency increased to 2332 ms",
+          "runtime configuration change log entry",
+          "no other recent deployments or rollbacks"
+        ],
+        "proposed_action": {
+          "detail": "Further investigation required",
+          "type": "escalate_to_human"
+        },
+        "confidence": 0.8
+      },
+      "seconds": 134,
+      "score": {
+        "reached": true,
+        "cause_ok": false,
+        "action_ok": true,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "inventory_down",
+      "run": 1,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "inventory service is down",
+        "evidence": [
+          "5xx error rate is 73.3%",
+          "inventory-service unreachable: connection refused (inventory:8081)",
+          "v1.0.0 is the current version",
+          "logs show 10 errors of inventory-service unreachable"
+        ],
+        "proposed_action": {
+          "detail": "Roll back to the previous version before the issue started",
+          "target_version": "v0.9.0",
+          "type": "rollback"
+        },
+        "confidence": 0.95
+      },
+      "seconds": 103,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "bad_deploy",
+      "run": 2,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "proposed_action": {
+          "detail": "Roll back to v1.0.0 to resolve the bug",
+          "target_version": "v1.0.0",
+          "type": "rollback"
+        },
+        "confidence": 0.95,
+        "root_cause": "Checkout module bug introduced in v1.1.0",
+        "evidence": [
+          "5xx error rate is 29.2%",
+          "10 KeyError exceptions in checkout module",
+          "Deploy v1.1.0 19 seconds before error started",
+          "Changes to checkout module in v1.1.0"
+        ]
+      },
+      "seconds": 131,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": true,
+        "correct": true
+      }
+    },
+    {
+      "scenario": "leak",
+      "run": 2,
+      "alerts": [
+        "HighMemory"
+      ],
+      "error": null,
+      "diagnosis": {
+        "proposed_action": {
+          "detail": "Roll back to v1.0.0",
+          "target_version": "v1.0.0",
+          "type": "rollback"
+        },
+        "confidence": 0.9,
+        "root_cause": "Memory leak in v1.0.0",
+        "evidence": [
+          "Memory usage is 231.6 MB (threshold 150 MB)",
+          "Deployment at 09:50:39",
+          "Runtime configuration change at 09:50:44"
+        ]
+      },
+      "seconds": 146,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "errors",
+      "run": 2,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "evidence": [
+          "5xx error rate increased from 42.3% to 50.3%",
+          "Database connection pool exhausted error in logs",
+          "Memory usage stable"
+        ],
+        "proposed_action": {
+          "detail": "Restart the service to release database connection pool",
+          "type": "restart"
+        },
+        "confidence": 0.9,
+        "root_cause": "Database connection pool exhausted"
+      },
+      "seconds": 122,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "slow",
+      "run": 2,
+      "alerts": [
+        "HighLatencyP95"
+      ],
+      "error": null,
+      "diagnosis": {
+        "proposed_action": {
+          "type": "rollback",
+          "detail": "Revert runtime configuration change",
+          "target_version": "v1.0.0"
+        },
+        "root_cause": "Runtime configuration change",
+        "evidence": [
+          "p95 latency increased to 2318 ms",
+          "Runtime configuration change at 09:55:54",
+          "No deploy happened shortly before the problem began",
+          "Current version is v1.0.0"
+        ],
+        "confidence": 0.9
+      },
+      "seconds": 184,
+      "score": {
+        "reached": true,
+        "cause_ok": false,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "inventory_down",
+      "run": 2,
+      "alerts": [
+        "HighErrorRate",
+        "HighLatencyP95"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "inventory-service is down, causing connection refusals and high 5xx error rate",
+        "evidence": [
+          "5xx error rate is 78.9% (threshold 10%)",
+          "inventory-service unreachable: connection refused (inventory:8081)",
+          "High error rate and latency observed after the issue started",
+          "No recent deploys that could have introduced this issue"
+        ],
+        "proposed_action": {
+          "type": "rollback",
+          "detail": "Rolling back to baseline version v1.0.0",
+          "target_version": "v1.0.0"
+        },
+        "confidence": 0.95
+      },
+      "seconds": 212,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "bad_deploy",
+      "run": 3,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "Checkout module bug introduced in v1.1.0",
+        "evidence": [
+          "5xx error rate is 33.8% (threshold 10%)",
+          "KeyError: 'discount_code' at checkout.apply_discount (checkout.py:88)",
+          "Error started around the same time as v1.1.0 deployment",
+          "No errors in v1.0.0"
+        ],
+        "proposed_action": {
+          "detail": "Rollback to v1.0.0 to resolve the checkout module bug",
+          "target_version": "v1.0.0",
+          "type": "rollback"
+        },
+        "confidence": 0.95
+      },
+      "seconds": 244,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": true,
+        "correct": true
+      }
+    },
+    {
+      "scenario": "leak",
+      "run": 3,
+      "alerts": [
+        "HighMemory"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "Memory leak in v1.0.0",
+        "evidence": [
+          "Memory usage increased to 253.6 MB (threshold 150 MB)",
+          "Deployment to v1.0.0 occurred at 10:07:00",
+          "No other significant issues reported"
+        ],
+        "proposed_action": {
+          "detail": "Rollback to v1.0.0 baseline",
+          "target_version": "v1.0.0",
+          "type": "rollback"
+        },
+        "confidence": 0.9
+      },
+      "seconds": 178,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "errors",
+      "run": 3,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "confidence": 0.9,
+        "root_cause": "Database connection pool exhausted",
+        "evidence": [
+          "5xx error rate increased from 40.8% to 49.7%",
+          "Database connection pool exhausted error in logs",
+          "Memory usage stable"
+        ],
+        "proposed_action": {
+          "detail": "Restart the service to release database connection pool",
+          "type": "restart"
+        }
+      },
+      "seconds": 135,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "slow",
+      "run": 3,
+      "alerts": [
+        "HighLatencyP95"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "Runtime configuration change likely caused performance degradation.",
+        "evidence": [
+          "High p95 latency alert started at 10:13:20.",
+          "Runtime configuration change logged at 10:13:01.",
+          "Current version is v1.0.0, deployed at 10:12:56."
+        ],
+        "proposed_action": {
+          "detail": "Restart the service to revert any changes made in the runtime configuration.",
+          "type": "restart"
+        },
+        "confidence": 0.9
+      },
+      "seconds": 160,
+      "score": {
+        "reached": true,
+        "cause_ok": false,
+        "action_ok": false,
+        "correct": false
+      }
+    },
+    {
+      "scenario": "inventory_down",
+      "run": 3,
+      "alerts": [
+        "HighErrorRate"
+      ],
+      "error": null,
+      "diagnosis": {
+        "root_cause": "Connection refusal to inventory service v1.0.0",
+        "evidence": [
+          "5xx error rate is 77.2% (threshold 10%)",
+          "inventory-service unreachable: connection refused (inventory:8081)",
+          "High error rate and low p95 latency suggest the issue is not related to load",
+          "No recent changes in the logs or metrics that would indicate a different cause"
+        ],
+        "proposed_action": {
+          "type": "rollback",
+          "detail": "Rolling back to the previous version before the issue started",
+          "target_version": "v1.0.0"
+        },
+        "confidence": 0.95
+      },
+      "seconds": 194,
+      "score": {
+        "reached": true,
+        "cause_ok": true,
+        "action_ok": false,
+        "correct": false
+      }
+    }
+  ]
+}

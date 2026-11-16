@@ -95,5 +95,24 @@ cd eval && python -m unittest                         # scoring tests
 
 Scoring is a keyword match on the root cause plus an allowed-action check (see `SCENARIOS`). Two things keep the eval honest: reset clears logs and deploy history so one incident's errors cannot leak into the next, and the config-change log line does not name the fault.
 
+## Results (qwen2.5:7b, CPU-only laptop, 15 runs)
+
+| Scenario | Reached diagnosis | Root cause right | Action OK | Fully correct | Avg seconds |
+|---|---|---|---|---|---|
+| Bad release (v1.1.0) | 3/3 | 3/3 | 3/3 | 3/3 | 162 |
+| Memory leak | 3/3 | 3/3 | 0/3 | 0/3 | 161 |
+| Database errors | 3/3 | 3/3 | 0/3 | 0/3 | 121 |
+| Slow responses | 3/3 | 0/3 | 1/3 | 0/3 | 159 |
+| Dependency down | 3/3 | 3/3 | 0/3 | 0/3 | 170 |
+| **Overall** | **15/15** | **12/15 (80%)** | **4/15 (27%)** | **3/15 (20%)** | **155** |
+
+What this shows:
+- The small local model usually finds the cause (80%) and always reaches a diagnosis, but it picks the wrong fix. It proposed a rollback when no bad release had shipped (leak, dependency down, slow) and `restart` for DB errors.
+- It missed the slow-response incident entirely, blaming a vague "configuration change" log line.
+- Guardrails on the 11 wrong-action proposals: 5 were blocked by policy (`restart` is not allowlisted; one rollback targeted an unknown version). The other 6 were rollbacks to the already-running v1.0.0, which policy allows, so they would have reached the human approval prompt. Human approval is the last line of defence, which is why it is mandatory.
+- Limits: one model, 3 runs per scenario, keyword scoring, a simulated service. Not a general benchmark. Scoring counts `restart` for DB errors as wrong because it is not allowlisted; a stricter or looser rubric changes the action numbers.
+
+Ideas to improve the numbers: a larger model or the Claude API, a prompt that says rollback only applies when a deploy preceded the incident, and tool outputs that include current vs. previous version.
+
 ## Next steps
-Demo recording and results table.
+Demo recording; compare with a stronger model.
