@@ -53,6 +53,17 @@ Tests use a scripted fake model, so they need no API key or running service:
 cd agent && python -m unittest -v
 ```
 
+## No API key? Run on a free local model
+
+The agent can use Ollama instead of the Claude API. Install Ollama from https://ollama.com, then:
+
+```bash
+ollama pull qwen2.5:7b
+python agent/agent.py --backend ollama      # also the default when ANTHROPIC_API_KEY is not set
+```
+
+Set `AGENT_MODEL` to try another tool-capable model. `agent/ollama_client.py` translates between the agent's tool-use format and Ollama's chat API, so the loop and guardrails are identical on both backends. Local 7B models are less reliable than Claude; the guardrails and the confidence floor exist for that reason.
+
 ## Phase 3: guarded actions
 
 The model only proposes; `agent/guardrails.py` decides whether anything runs.

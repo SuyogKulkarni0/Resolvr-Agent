@@ -89,11 +89,12 @@ def run_tool(name, args):
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
-def run_triage(client, verbose=True):
+def run_triage(client, verbose=True, model=None):
     """Run one investigation. Returns the diagnosis dict, or None if it never concluded."""
+    model = model or MODEL
     messages = [{"role": "user", "content": "An alert may be firing on the shop service. Investigate and diagnose."}]
     for turn in range(MAX_TURNS):
-        resp = client.messages.create(model=MODEL, max_tokens=1500, system=SYSTEM_PROMPT,
+        resp = client.messages.create(model=model, max_tokens=1500, system=SYSTEM_PROMPT,
                                       tools=TOOLS, messages=messages)
         messages.append({"role": "assistant", "content": resp.content})
         results = []
@@ -131,19 +132,27 @@ def report(diagnosis):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--watch", action="store_true", help="poll for alerts every 10 seconds")
+    parser.add_argument("--backend", choices=["anthropic", "ollama"],
+                        help="LLM backend (default: anthropic if ANTHROPIC_API_KEY is set, else ollama)")
     parser.add_argument("--dry-run", action="store_true", help="ask for approval but never execute")
     parser.add_argument("--diagnose-only", action="store_true", help="skip the action phase entirely")
     args = parser.parse_args()
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        sys.exit("ANTHROPIC_API_KEY is not set.")
-    import anthropic
-    client = anthropic.Anthropic()
+    backend = args.backend or ("anthropic" if os.getenv("ANTHROPIC_API_KEY") else "ollama")
+    if backend == "anthropic":
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            sys.exit("ANTHROPIC_API_KEY is not set. Use --backend ollama for a free local model.")
+        import anthropic
+        client, model = anthropic.Anthropic(), MODEL
+    else:
+        import ollama_client
+        client, model = ollama_client.OllamaClient(), os.getenv("AGENT_MODEL", ollama_client.DEFAULT_MODEL)
+    print(f"Backend: {backend} ({model})")
 
     while True:
         alerts = fetch("/api/alerts")
         if alerts:
             print(f"{len(alerts)} alert(s) firing: {', '.join(a['alert'] for a in alerts)}. Investigating...")
-            diagnosis = run_triage(client)
+            diagnosis = run_triage(client, model=model)
             if diagnosis:
                 report(diagnosis)
                 if not args.diagnose_only:
