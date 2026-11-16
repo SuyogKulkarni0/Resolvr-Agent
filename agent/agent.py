@@ -37,7 +37,9 @@ Method:
 
 Proposed action must be one of: rollback (also set target_version to the last good
 version from the deploy history), clear_fault, restart, escalate_to_human, none.
-Your action is only a proposal: a policy layer and a human approve it before anything runs. Use escalate_to_human when evidence is weak or conflicting.
+Your action is only a proposal: a policy layer and a human approve it before anything runs.
+Do not write long explanations. When you have enough evidence, call submit_diagnosis
+directly, with a short root_cause and 2-4 short evidence items. Use escalate_to_human when evidence is weak or conflicting.
 Confidence is 0.0-1.0 and must reflect how conclusive the evidence is."""
 
 TOOLS = [
@@ -72,6 +74,58 @@ def fetch(path):
         return json.loads(r.read())
 
 
+ACTION_TYPES = {"rollback", "clear_fault", "restart", "escalate_to_human", "none"}
+
+
+def valid_diagnosis(d):
+    """Check a diagnosis has the fields and value ranges the guardrails rely on."""
+    try:
+        a = d["proposed_action"]
+        ok = (isinstance(d["root_cause"], str) and isinstance(d["evidence"], list)
+              and a["type"] in ACTION_TYPES and isinstance(a.get("detail", ""), str)
+              and isinstance(d["confidence"], (int, float)) and 0 <= d["confidence"] <= 1)
+    except (KeyError, TypeError, AttributeError):
+        return False
+    if ok:
+        a.setdefault("detail", "")
+    return ok
+
+
+def extract_diagnosis(text):
+    """Fallback for models that write the diagnosis as JSON text instead of calling the tool.
+
+    Local models sometimes answer in prose plus a ```json block. We accept that only if it
+    parses and passes the same validation as a tool call; the guardrails still apply.
+    """
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(text[i:])
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and "root_cause" in obj and valid_diagnosis(obj):
+            return obj
+    return None
+
+
+def summarize_logs(entries):
+    """Collapse repeated log lines into {level, version, msg, count, first, last}.
+
+    A failing service logs the same error hundreds of times; sending each one wastes
+    context (and, on a small local model, minutes of CPU time) without adding evidence.
+    """
+    groups = {}
+    for e in entries:
+        key = (e["level"], e["version"], e["msg"])
+        g = groups.setdefault(key, {"level": e["level"], "version": e["version"], "msg": e["msg"],
+                                    "count": 0, "first": e["ts"][11:19]})
+        g["count"] += 1
+        g["last"] = e["ts"][11:19]
+    return list(groups.values())
+
+
 def run_tool(name, args):
     """Execute one read-only tool. Returns a JSON string for the model."""
     try:
@@ -81,7 +135,7 @@ def run_tool(name, args):
             return json.dumps(fetch("/api/metrics"))
         if name == "get_logs":
             n = max(1, min(int(args.get("n", 30)), 100))
-            return json.dumps(fetch(f"/api/logs?n={n}"))
+            return json.dumps(summarize_logs(fetch(f"/api/logs?n={n}")))
         if name == "get_deploys":
             return json.dumps(fetch("/api/deploys"))
         return json.dumps({"error": f"unknown tool {name}"})
@@ -104,13 +158,18 @@ def run_triage(client, verbose=True, model=None):
             if block.type != "tool_use":
                 continue
             if block.name == "submit_diagnosis":
-                return block.input
+                if valid_diagnosis(block.input):
+                    return block.input
+                results.append({"type": "tool_result", "tool_use_id": block.id,
+                                "content": json.dumps({"error": "invalid diagnosis; resubmit with root_cause, "
+                                                       "evidence[], proposed_action{type,detail}, confidence 0-1"})})
+                continue
             if verbose:
                 print(f"  [tool]  {block.name}({json.dumps(block.input)})")
             results.append({"type": "tool_result", "tool_use_id": block.id,
                             "content": run_tool(block.name, block.input)})
-        if not results:  # model stopped without a diagnosis
-            return None
+        if not results:  # model answered in text: accept a well-formed JSON diagnosis, else give up
+            return extract_diagnosis(" ".join(b.text for b in resp.content if b.type == "text"))
         messages.append({"role": "user", "content": results})
     return None
 

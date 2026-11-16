@@ -62,7 +62,7 @@ ollama pull qwen2.5:7b
 python agent/agent.py --backend ollama      # also the default when ANTHROPIC_API_KEY is not set
 ```
 
-Set `AGENT_MODEL` to try another tool-capable model. `agent/ollama_client.py` translates between the agent's tool-use format and Ollama's chat API, so the loop and guardrails are identical on both backends. Local 7B models are less reliable than Claude; the guardrails and the confidence floor exist for that reason.
+Set `AGENT_MODEL` to try another tool-capable model. `agent/ollama_client.py` translates between the agent's tool-use format and Ollama's chat API, so the loop and guardrails are identical on both backends. Measured on a CPU-only laptop (WSL, 12 threads), `qwen2.5:7b` diagnosed the bad-deploy incident correctly in about 4 minutes; a GPU or a hosted model is much faster. If a local model writes its answer as JSON text instead of calling the tool, the agent accepts it only if it passes the same validation. Local 7B models are less reliable than Claude; the guardrails and the confidence floor exist for that reason.
 
 ## Phase 3: guarded actions
 

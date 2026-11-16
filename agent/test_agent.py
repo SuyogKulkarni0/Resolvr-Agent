@@ -48,6 +48,33 @@ class AgentLoopTest(unittest.TestCase):
             out = json.loads(agent.run_tool("get_alerts", {}))
         self.assertIn("connection refused", out["error"])
 
+    def test_repeated_logs_are_collapsed(self):
+        e = {"ts": "2026-11-16T09:01:27+00:00", "level": "ERROR", "version": "v1.1.0", "msg": "KeyError"}
+        out = agent.summarize_logs([e, {**e, "ts": "2026-11-16T09:01:30+00:00"}, {**e, "msg": "other"}])
+        self.assertEqual(len(out), 2)
+        self.assertEqual((out[0]["count"], out[0]["first"], out[0]["last"]), (2, "09:01:27", "09:01:30"))
+
+    def test_json_diagnosis_in_text_is_accepted(self):
+        d = {"root_cause": "bad deploy", "evidence": ["a"], "confidence": 0.9,
+             "proposed_action": {"type": "rollback", "detail": "x", "target_version": "v1.0.0"}}
+        text = "Based on evidence...\n```json\n" + json.dumps(d) + "\n```"
+        self.assertEqual(agent.extract_diagnosis(text), d)
+        client = FakeClient([[NS(type="text", text=text)]])
+        self.assertEqual(agent.run_triage(client, verbose=False), d)
+
+    def test_malformed_diagnosis_is_rejected(self):
+        self.assertIsNone(agent.extract_diagnosis("no json here"))
+        bad = {"root_cause": "x", "evidence": [], "confidence": 7,
+               "proposed_action": {"type": "format_disk", "detail": ""}}
+        self.assertIsNone(agent.extract_diagnosis(json.dumps(bad)))
+
+    def test_invalid_submit_gets_error_and_can_retry(self):
+        good = {"root_cause": "x", "evidence": ["y"], "confidence": 0.8,
+                "proposed_action": {"type": "none", "detail": "d"}}
+        client = FakeClient([[tool_use("1", "submit_diagnosis", root_cause="x")],
+                             [tool_use("2", "submit_diagnosis", **good)]])
+        self.assertEqual(agent.run_triage(client, verbose=False), good)
+
     def test_agent_has_no_write_tools(self):
         names = {t["name"] for t in agent.TOOLS}
         self.assertEqual(names, {"get_alerts", "get_metrics", "get_logs", "get_deploys", "submit_diagnosis"})

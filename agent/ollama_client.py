@@ -72,7 +72,8 @@ class OllamaClient:
         payload = {"model": model, "stream": False,
                    "messages": to_ollama_messages(system, messages),
                    "tools": to_ollama_tools(tools),
-                   "options": {"temperature": 0, "num_predict": max_tokens}}
+                   "options": {"temperature": 0, "num_predict": max_tokens,
+                               "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "8192"))}}
         req = urllib.request.Request(self.url + "/api/chat", data=json.dumps(payload).encode(),
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
