@@ -3,338 +3,352 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shop Service Monitor</title>
+<title>Shop Service Monitoring Dashboard</title>
 <style>
   :root {
-    --bg:#f3f6ff; --card:#ffffff; --line:#e4e9fb; --text:#141a3c; --mute:#68729a;
-    --indigo:#5b5bf0; --violet:#8b5cf6; --blue:#2f80ff; --mint:#10b981; --amber:#f59e0b; --red:#ef4444; --pink:#ec4899;
-    --shadow:0 8px 30px rgba(79,70,229,.08), 0 1px 3px rgba(20,26,60,.05);
-    --mono:"Cascadia Code",Consolas,"SF Mono",Menlo,monospace;
+    --bg:#08090c; --panel:#0e1015; --panel2:#0b0c10; --line:#1c2029; --line2:#272c38; --text:#e4e7ee; --mute:#7c8496;
+    --green:#7ee787; --cyan:#79c0ff; --yellow:#e3b341; --red:#ff7b72; --violet:#b392f0; --teal:#7fd6c2; --blue:#5865f2;
+    --mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
   }
   * { box-sizing:border-box; }
-  html { color-scheme:light; }
-  body { margin:0; color:var(--text); font:15px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif; min-height:100vh;
-         background:radial-gradient(900px 420px at 8% -8%, #dbe6ff, transparent 70%), radial-gradient(800px 420px at 100% 0%, #eadcff, transparent 70%),
-                    radial-gradient(700px 400px at 50% 110%, #d9f7ec, transparent 70%), var(--bg); background-attachment:fixed; }
+  html { color-scheme:dark; scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 var(--mono); min-height:100vh; }
 
-  /* ---------- top bar ---------- */
-  .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 30px; position:sticky; top:0; z-index:5;
-            background:#ffffffcc; backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
-  .brand { display:flex; align-items:center; gap:12px; }
-  .logo { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; font-size:20px; color:#fff; background:linear-gradient(135deg,var(--blue),var(--violet) 60%,var(--pink)); box-shadow:0 6px 18px rgba(91,91,240,.35); }
-  .brand-name { font-weight:800; font-size:18px; letter-spacing:-.2px; } .brand-sub { color:var(--mute); font-size:12.5px; }
-  .top-right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .chip { padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700; background:#eef1ff; color:var(--indigo); }
-  .chip.fault { background:#fff3dc; color:#b26a00; } .chip.fault.active { background:#ffe3e3; color:#c62828; }
-  .live { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:800; letter-spacing:.08em; color:#0a8f68; background:#dcfaee; padding:5px 12px; border-radius:999px; }
-  .live i { width:8px; height:8px; border-radius:50%; background:var(--mint); box-shadow:0 0 0 0 #10b98199; animation:ping 1.8s infinite; }
-  @keyframes ping { 70% { box-shadow:0 0 0 8px #10b98100; } 100% { box-shadow:0 0 0 0 #10b98100; } }
+  /* ---------- shell: icon rail + content ---------- */
+  .shell { display:grid; grid-template-columns:58px 1fr; min-height:100vh; }
+  .rail { position:sticky; top:0; height:100vh; display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px 0; background:#0a0b0f; border-right:1px solid var(--line); }
+  .rail .logo { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; background:linear-gradient(135deg,#ff5d6c,#e0457b); color:#fff; font-size:16px; margin-bottom:14px; }
+  .rail a { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; color:var(--mute); text-decoration:none; font-size:17px; }
+  .rail a:hover { background:#161922; color:var(--text); } .rail a.on { background:#171a24; color:var(--text); box-shadow:inset 2px 0 0 var(--blue); }
+  @media (max-width:900px) { .shell { grid-template-columns:1fr; } .rail { display:none; } }
 
-  /* ---------- layout ---------- */
-  .layout { display:grid; grid-template-columns:minmax(0,1.12fr) minmax(0,1fr); gap:24px; padding:24px 30px 40px; max-width:1500px; margin:0 auto; align-items:start; }
-  @media (max-width:1050px) { .layout { grid-template-columns:1fr; padding:16px; } .topbar { padding:12px 16px; } .agent-panel { position:static !important; height:auto !important; } }
-  .stack { display:flex; flex-direction:column; gap:20px; min-width:0; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:20px; box-shadow:var(--shadow); }
-  .card-head { display:flex; justify-content:space-between; align-items:center; padding:16px 20px 0; }
-  .card-title { font-size:15px; font-weight:800; display:flex; align-items:center; gap:9px; }
-  .card-title .ti { width:28px; height:28px; border-radius:9px; display:grid; place-items:center; font-size:15px; background:#eef1ff; }
-  .card-body { padding:14px 20px 20px; }
-  .count { min-width:26px; text-align:center; padding:2px 10px; border-radius:999px; font-size:13px; font-weight:800; }
-  .count.bad { background:#ffe3e3; color:var(--red); } .count.ok { background:#dcfaee; color:#0a8f68; }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:16px 24px 6px; }
+  .title { font:600 20px system-ui,"Segoe UI",sans-serif; display:flex; align-items:center; gap:10px; }
+  .title i { width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 10px var(--green); }
+  .top-right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--mute); font-size:12.5px; }
+  .pill { padding:5px 11px; border:1px solid var(--line2); border-radius:8px; background:var(--panel); color:var(--text); }
+  .pill.fault.active { color:var(--red); border-color:#5a2a2a; }
 
-  /* ---------- KPI tiles ---------- */
-  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:16px; }
-  .kpi { --accent:var(--blue); background:var(--card); border:1px solid var(--line); border-radius:20px; padding:16px 16px 10px; box-shadow:var(--shadow); position:relative; overflow:hidden; transition:transform .2s, border-color .3s, box-shadow .3s; }
-  .kpi:hover { transform:translateY(-2px); }
-  .kpi::after { content:""; position:absolute; left:0; right:0; top:0; height:4px; background:var(--accent); }
-  .kpi.warn { --accent:var(--amber) !important; border-color:#fbd38d; } .kpi.bad { --accent:var(--red) !important; border-color:#fca5a5; box-shadow:0 8px 30px rgba(239,68,68,.15); }
-  .kpi-head { display:flex; justify-content:space-between; align-items:center; color:var(--mute); font-size:13px; font-weight:600; }
-  .kpi-ico { width:30px; height:30px; border-radius:10px; display:grid; place-items:center; font-size:15px; background:color-mix(in srgb, var(--accent) 14%, white); }
-  .kpi-value { font-size:32px; font-weight:800; margin:6px 0 0; letter-spacing:-.8px; font-variant-numeric:tabular-nums; }
-  .kpi.warn .kpi-value { color:#b26a00; } .kpi.bad .kpi-value { color:var(--red); }
-  .kpi .unit { font-size:14px; color:var(--mute); font-weight:600; margin-left:3px; letter-spacing:0; }
-  .spark { width:100%; height:34px; display:block; margin-top:2px; }
+  .layout { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:16px; padding:10px 24px 40px; align-items:start; }
+  @media (max-width:1100px) { .layout { grid-template-columns:1fr; padding:10px 14px 30px; } .agent { position:static !important; height:auto !important; } }
+  .col { display:flex; flex-direction:column; gap:16px; min-width:0; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; min-width:0; }
+  .ph { display:flex; justify-content:space-between; align-items:center; padding:11px 14px 0; }
+  .pt { font:600 14px system-ui,"Segoe UI",sans-serif; color:var(--text); }
+  .pt small { font:12px var(--mono); color:var(--mute); font-weight:400; margin-left:8px; }
+  .pb { padding:10px 14px 14px; }
 
-  /* ---------- alerts ---------- */
-  #alerts { display:flex; flex-direction:column; gap:12px; }
-  .healthy { display:flex; align-items:center; gap:16px; padding:18px; border-radius:16px; background:linear-gradient(135deg,#dcfaee,#e9fbff); border:1px solid #b7f0d9; }
-  .healthy .ok-ico { width:46px; height:46px; border-radius:50%; background:linear-gradient(135deg,#34d399,#10b981); color:#fff; display:grid; place-items:center; font-size:24px; box-shadow:0 6px 16px rgba(16,185,129,.35); }
-  .healthy b { font-size:16px; color:#06775a; } .healthy small { display:block; color:#3d7f6c; margin-top:1px; }
-  .alert { display:flex; gap:14px; padding:16px; border-radius:16px; background:linear-gradient(135deg,#fff1f1,#fff7f5); border:1px solid #ffc9c9; }
-  .alert.warning { background:linear-gradient(135deg,#fff8e8,#fffbf0); border-color:#fde0a6; }
-  .alert .aico { flex:none; width:44px; height:44px; border-radius:14px; display:grid; place-items:center; font-size:22px; color:#fff; background:linear-gradient(135deg,#ff6b6b,var(--red)); box-shadow:0 6px 16px rgba(239,68,68,.35); }
-  .alert.warning .aico { background:linear-gradient(135deg,#fbbf24,var(--amber)); box-shadow:0 6px 16px rgba(245,158,11,.35); }
-  .alert .body { flex:1; min-width:0; }
-  .alert .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .badge { font-size:11px; font-weight:800; letter-spacing:.08em; padding:3px 9px; border-radius:999px; background:var(--red); color:#fff; }
-  .alert.warning .badge { background:var(--amber); }
-  .alert .name { font-weight:800; font-size:16.5px; } .alert .sum { color:var(--mute); font-size:13.5px; margin-top:3px; }
-  .meter { position:relative; height:10px; border-radius:99px; background:#ffe0e0; margin-top:14px; }
-  .alert.warning .meter { background:#ffeec7; }
-  .meter .fill { height:100%; border-radius:99px; background:linear-gradient(90deg,#fbbf24,var(--red)); transition:width .5s; }
-  .meter .mark { position:absolute; top:-4px; bottom:-4px; width:3px; border-radius:2px; background:var(--text); left:33.3%; }
-  .meter-labels { display:flex; justify-content:space-between; font-size:12px; color:var(--mute); margin-top:6px; } .meter-labels b { color:var(--text); }
+  /* ---------- stat panels ---------- */
+  .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; } @media (max-width:700px) { .stats { grid-template-columns:repeat(2,1fr); } }
+  .stat { text-align:left; } .stat .val { font:500 40px system-ui,"Segoe UI",sans-serif; text-align:center; padding:18px 0 6px; font-variant-numeric:tabular-nums; letter-spacing:-1px; }
+  .stat .val small { font-size:14px; color:var(--mute); margin-left:4px; letter-spacing:0; }
+  .stat .cap { text-align:center; color:var(--mute); font-size:11.5px; padding-bottom:12px; }
+  .stat.warn .val { color:var(--yellow); } .stat.bad .val { color:var(--red); } .stat.bad { border-color:#4a2327; } .stat.warn { border-color:#4a3b17; }
 
-  /* ---------- controls ---------- */
-  .groups { display:grid; grid-template-columns:1.6fr 1fr; gap:20px; } @media (max-width:700px) { .groups { grid-template-columns:1fr; } }
-  .group-label { font-size:12px; color:var(--mute); margin-bottom:9px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
-  .btns { display:flex; flex-wrap:wrap; gap:9px; }
-  button { background:#fff; color:var(--text); border:1px solid var(--line); border-radius:12px; padding:9px 14px; font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; transition:transform .12s, box-shadow .2s, background .2s; }
-  button:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(20,26,60,.1); } button:active { transform:none; }
-  button.inject { background:#fff1f2; border-color:#fecdd3; color:#b42336; } button.inject:hover { background:#ffe4e6; }
-  button.recover { background:#ecfdf5; border-color:#a7f3d0; color:#0a7a57; } button.recover:hover { background:#d1fae5; }
+  /* ---------- alerts table ---------- */
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font:600 13px system-ui,"Segoe UI",sans-serif; padding:9px 12px; background:#12141b; border-bottom:1px solid var(--line2); }
+  td { padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  .sev { font-weight:700; font-size:11px; letter-spacing:.06em; padding:2px 7px; border-radius:4px; }
+  .sev.critical { background:#ff7b7222; color:var(--red); border:1px solid #ff7b7255; } .sev.warning { background:#e3b34122; color:var(--yellow); border:1px solid #e3b34155; }
+  .bar { height:6px; border-radius:3px; background:#1a1e28; min-width:70px; position:relative; } .bar i { display:block; height:100%; border-radius:3px; background:var(--red); } .bar.warning i { background:var(--yellow); }
+  .bar u { position:absolute; top:-3px; bottom:-3px; left:33.3%; width:1px; background:var(--mute); }
+  .healthy { color:var(--green); padding:6px 2px; } .healthy span { color:var(--mute); }
 
-  /* ---------- logs ---------- */
-  #logs { background:#111736; border-radius:14px; padding:13px 15px; font:12.5px/1.65 var(--mono); height:210px; overflow:auto; color:#c8d2f5; }
-  #logs div { white-space:pre-wrap; word-break:break-word; } .ERROR { color:#ff8a95; } .WARN { color:#ffd27a; } .INFO { color:#8fa0d6; }
+  /* ---------- charts ---------- */
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+  .chart svg { width:100%; height:auto; display:block; } .chart text { font:8.5px var(--mono); fill:#6d7588; }
+  .chart .legend { padding:0 14px 12px; color:var(--mute); font-size:11.5px; display:flex; gap:14px; } .chart .legend b { font-weight:400; }
 
-  /* ---------- agent panel: a separate backend process ---------- */
-  .agent-panel { position:sticky; top:86px; height:calc(100vh - 112px); min-height:540px; display:flex; flex-direction:column; border-radius:22px; overflow:hidden; background:#fff;
-                 border:1px solid #d9d3ff; box-shadow:0 16px 50px rgba(91,91,240,.18); }
-  .chrome { display:flex; align-items:center; gap:10px; padding:12px 18px; color:#fff; background:linear-gradient(110deg,#4f46e5,#7c3aed 55%,#c026d3); }
-  .dots { display:flex; gap:6px; } .dots i { width:11px; height:11px; border-radius:50%; background:#ffffff66; }
-  .chrome .proc { flex:1; text-align:center; font:12px var(--mono); color:#efe9ff; }
-  .state { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:800; padding:4px 12px; border-radius:999px; background:#ffffff2e; color:#fff; white-space:nowrap; }
-  .state i { width:8px; height:8px; border-radius:50%; background:#d9d3ff; }
-  .state.live i { background:#7dd3fc; animation:pulse 1.1s infinite; } .state.wait i { background:#fde68a; animation:pulse 1.1s infinite; } .state.done i { background:#6ee7b7; }
-  @keyframes pulse { 50% { opacity:.3; transform:scale(.8); } }
-  .agent-intro { padding:16px 20px 14px; background:linear-gradient(180deg,#f5f3ff,#fff); border-bottom:1px solid #ece8ff; }
-  .agent-title { font-size:20px; font-weight:800; display:flex; align-items:center; gap:9px; }
-  .agent-title .robot { width:34px; height:34px; border-radius:11px; display:grid; place-items:center; font-size:18px; background:linear-gradient(135deg,#ede9fe,#fae8ff); }
-  .agent-sub { color:var(--mute); font-size:13.5px; margin-top:4px; }
-  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px; }
-  .stat { border-radius:14px; padding:9px 13px; } .stat:nth-child(1){background:#e8f0ff} .stat:nth-child(2){background:#f1eaff} .stat:nth-child(3){background:#e2fbf1}
-  .stat .k { font-size:11px; color:var(--mute); text-transform:uppercase; letter-spacing:.08em; font-weight:700; } .stat .v { font:800 18px var(--mono); margin-top:1px; }
-  #approval:empty { display:none; }
-  #approval { padding:14px 16px 0; }
-  #approval .box { border:1.5px solid #fbbf24; background:linear-gradient(135deg,#fffbeb,#fff7e0); border-radius:16px; padding:15px 17px; box-shadow:0 8px 24px rgba(245,158,11,.18); animation:slide .3s ease; }
-  #approval .head { color:#b45309; font-weight:800; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
-  #approval .what { font-size:16px; margin:6px 0 2px; } #approval .why { color:var(--mute); font-size:13.5px; }
-  #approval .actions { display:flex; gap:10px; margin-top:13px; }
-  button.approve { background:linear-gradient(135deg,#34d399,#10b981); color:#fff; border:none; font-weight:800; padding:10px 26px; box-shadow:0 6px 16px rgba(16,185,129,.35); }
-  button.deny { background:#fff; color:var(--red); border-color:#fca5a5; }
-  @keyframes slide { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
-  #timeline { flex:1; overflow:auto; padding:8px 20px 16px; }
-  #timeline .empty { color:var(--mute); padding:34px 6px; text-align:center; font-size:14px; }
-  #timeline .empty b { display:block; font:800 15px var(--mono); color:var(--violet); margin-bottom:6px; }
-  .step { display:grid; grid-template-columns:32px 1fr auto; gap:12px; padding-top:12px; }
-  .step.fresh { animation:slide .35s ease; }
-  .rail { display:flex; flex-direction:column; align-items:center; }
-  .rail::after { content:""; flex:1; width:2px; background:linear-gradient(#e0dbff,#f0eeff); margin-top:4px; min-height:14px; border-radius:2px; }
-  .step:last-child .rail::after { display:none; }
-  .node { width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font-size:14px; background:#f1eeff; border:1.5px solid #ddd6fe; }
-  .content { padding-bottom:10px; min-width:0; }
-  .title { font-weight:700; font-size:14.5px; } .detail { color:var(--mute); font-size:13px; margin-top:2px; white-space:pre-wrap; word-break:break-word; }
-  .time { font:11.5px var(--mono); color:#9aa3c7; padding-top:7px; }
-  .step.run_started .node { background:#ffe4e6; border-color:#fecdd3; }
-  .step.thinking .title { color:var(--mute); font-weight:500; font-style:italic; } .step.thinking .node { opacity:.65; }
-  .step.tool_call .node { background:#e0efff; border-color:#bfdbfe; }
-  .step.tool_result .content { margin-left:4px; } .step.tool_result .title { color:var(--mute); font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; }
-  .step.tool_result .detail { color:#2a3460; font:12.5px/1.55 var(--mono); background:#f5f7ff; border:1px solid #e4e9fb; border-radius:10px; padding:8px 11px; }
-  .step.tool_result .node { background:transparent; border-color:transparent; color:var(--mute); }
-  .step.diagnosis .content { background:linear-gradient(135deg,#eff6ff,#f5f0ff); border:1px solid #c7d7ff; border-radius:16px; padding:12px 15px; margin-bottom:10px; }
-  .step.diagnosis .node { background:linear-gradient(135deg,#dbeafe,#ede9fe); border-color:#c4b5fd; }
-  .evidence { margin:8px 0 4px; padding-left:19px; } .evidence li { margin:3px 0; font-size:13.5px; color:var(--text); }
-  .conf { display:flex; align-items:center; gap:10px; margin-top:9px; font-size:12px; color:var(--mute); font-weight:600; }
-  .conf .track { flex:1; height:7px; border-radius:9px; background:#dde3fb; overflow:hidden; } .conf .track i { display:block; height:100%; border-radius:9px; background:linear-gradient(90deg,var(--blue),var(--mint)); }
-  .step.good .title { color:#0a8f68; } .step.good .node { background:#d1fae5; border-color:#6ee7b7; }
-  .step.bad .title { color:var(--red); } .step.bad .node { background:#ffe4e6; border-color:#fda4af; }
-  .step.warn .title { color:#b26a00; } .step.warn .node { background:#fef3c7; border-color:#fcd34d; }
-  .guard { display:flex; flex-wrap:wrap; gap:8px; padding:12px 18px; border-top:1px solid #ece8ff; background:#faf9ff; }
-  .guard span { font-size:11.5px; font-weight:700; color:#5b4bc4; background:#efecff; border-radius:999px; padding:4px 11px; }
-  .foot { text-align:center; color:var(--mute); font-size:12px; padding:0 0 26px; }
+  /* ---------- unix terminals ---------- */
+  .term-head { display:flex; justify-content:space-between; align-items:center; padding:9px 14px; border-bottom:1px solid var(--line); color:var(--mute); font-size:12px; }
+  .prompt { color:var(--green); } .term-head .prompt::after { content:"_"; animation:blink 1s steps(1) infinite; margin-left:2px; }
+  @keyframes blink { 50% { opacity:0; } }
+  #logs { background:#06070a; padding:10px 14px; height:220px; overflow:auto; font-size:12px; line-height:1.6; border-radius:0 0 6px 6px; }
+  #logs div { white-space:pre-wrap; word-break:break-word; color:#aab1c4; }
+  .t { color:#5a6275; } .lvl-ERROR { color:var(--red); font-weight:700; } .lvl-WARN { color:var(--yellow); font-weight:700; } .lvl-INFO { color:var(--cyan); }
+  .msg-ERROR { color:#ffb3ad; } .host { color:var(--violet); }
+
+  .btns { display:flex; flex-wrap:wrap; gap:8px; }
+  button { font:12.5px var(--mono); background:transparent; color:var(--text); border:1px solid var(--line2); border-radius:5px; padding:7px 11px; cursor:pointer; }
+  button:hover { background:#161922; } button:active { transform:translateY(1px); }
+  button.inject { color:var(--red); border-color:#4d2b2e; } button.inject:hover { background:#1f1315; border-color:var(--red); }
+  button.recover { color:var(--green); border-color:#25452d; } button.recover:hover { background:#101c13; border-color:var(--green); }
+  .groups { display:grid; grid-template-columns:1.5fr 1fr; gap:18px; } @media (max-width:700px) { .groups { grid-template-columns:1fr; } }
+  .glabel { color:var(--mute); margin-bottom:8px; font-size:12px; }
+
+  /* ---------- agent: a separate backend process, shown as a terminal ---------- */
+  .agent { position:sticky; top:14px; height:calc(100vh - 28px); min-height:560px; display:flex; flex-direction:column; background:#070b09; border:1px solid #1f3a2a; border-radius:8px; overflow:hidden; box-shadow:0 0 0 1px #0d1a12, 0 20px 60px #00000099; }
+  .chrome { display:flex; align-items:center; gap:10px; padding:9px 14px; background:#0b120e; border-bottom:1px solid #1a3024; }
+  .dots { display:flex; gap:6px; } .dots i { width:11px; height:11px; border-radius:50%; background:#ff5f57; } .dots i:nth-child(2){background:#febc2e} .dots i:nth-child(3){background:#28c840}
+  .chrome .who { flex:1; text-align:center; color:#7aa88a; font-size:12px; }
+  .state { font-size:11px; font-weight:700; letter-spacing:.06em; padding:2px 9px; border-radius:4px; border:1px solid #2a3a30; color:var(--mute); white-space:nowrap; }
+  .state.live { color:var(--cyan); border-color:#1f4d6b; animation:pulse 1.4s infinite; } .state.wait { color:var(--yellow); border-color:#5c4a14; animation:pulse 1.4s infinite; }
+  .state.done { color:var(--green); border-color:#25552f; } .state.bad { color:var(--red); border-color:#5a2a2a; }
+  @keyframes pulse { 50% { opacity:.55; } }
+
+  /* incident summary: the issue being solved, in one place */
+  #incident { padding:14px 16px; border-bottom:1px solid #1a3024; background:linear-gradient(180deg,#0a130e,#070b09); }
+  .inc-title { display:flex; justify-content:space-between; align-items:center; color:#7aa88a; font-size:11.5px; letter-spacing:.14em; margin-bottom:10px; }
+  .kv { display:grid; grid-template-columns:78px 1fr; gap:7px 12px; align-items:start; }
+  .kv .k { color:#5f8a70; font-size:11.5px; letter-spacing:.08em; padding-top:2px; } .kv .v { color:#d9efe0; word-break:break-word; }
+  .kv .v.big { font:600 15px system-ui,"Segoe UI",sans-serif; color:#fff; }
+  .kv ul { margin:0; padding:0; list-style:none; } .kv li { color:#9ec2ab; font-size:12.5px; } .kv li::before { content:"› "; color:var(--green); }
+  .act { color:var(--yellow); font-weight:700; } .conf { color:var(--mute); margin-left:10px; font-size:12px; }
+  .status { font-weight:800; letter-spacing:.05em; } .status.wait { color:var(--yellow); } .status.live { color:var(--cyan); } .status.good { color:var(--green); } .status.bad { color:var(--red); } .status.warn { color:var(--yellow); }
+  .approve-row { display:flex; gap:10px; margin-top:12px; }
+  button.approve { background:var(--green); color:#03140a; border-color:var(--green); font-weight:700; padding:8px 24px; } button.approve:hover { background:#9af0a1; }
+  button.deny { color:var(--red); border-color:#5a2a2a; padding:8px 18px; }
+  .idle { color:#5f8a70; } .idle b { color:var(--green); }
+
+  .term-bar { display:flex; justify-content:space-between; align-items:center; padding:8px 16px; color:#5f8a70; font-size:11.5px; border-bottom:1px solid #14261c; }
+  .term-bar label { cursor:pointer; user-select:none; } .term-bar input { accent-color:#28c840; vertical-align:-2px; }
+  #timeline { flex:1; overflow:auto; padding:10px 16px 14px; font-size:12.5px; line-height:1.55; }
+  .ln { display:grid; grid-template-columns:62px 1fr; gap:10px; padding:2px 0; } .ln.fresh { animation:fade .3s ease; } @keyframes fade { from { opacity:0; } }
+  .ln .ts { color:#4a6a57; } .ln .tx { color:#cfe8d5; word-break:break-word; white-space:pre-wrap; }
+  .ln .tag { font-weight:700; } .tag.alert { color:var(--red); } .tag.diag { color:var(--violet); } .tag.policy { color:var(--teal); } .tag.human { color:var(--yellow); }
+  .tag.action { color:var(--yellow); } .tag.verify { color:var(--green); } .tag.done { color:var(--green); } .tag.bad { color:var(--red); } .tag.warn { color:var(--yellow); }
+  .ln.cmd .tx { color:#fff; } .ln.cmd .tx::before { content:"$ "; color:var(--green); }
+  .ln.res .tx { color:#8fb39d; } .ln.res .tx::before { content:"→ "; color:#4a6a57; }
+  .ln.dim .tx { color:#5f7d6b; font-style:italic; }
+  .empty-term { color:#5f8a70; padding:6px 0; } .empty-term .prompt::after { content:"_"; animation:blink 1s steps(1) infinite; }
+  .guard { display:flex; flex-wrap:wrap; gap:8px; padding:9px 16px; border-top:1px solid #14261c; background:#080d0a; color:#5f8a70; font-size:11.5px; }
+  .guard span::before { content:"["; } .guard span::after { content:"]"; }
+  .foot { color:var(--mute); font-size:11.5px; text-align:center; padding:0 0 22px; grid-column:1/-1; }
 </style>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <div class="logo">&#9672;</div>
-    <div><div class="brand-name">Shop Service</div><div class="brand-sub">Live monitoring &amp; autonomous triage</div></div>
-  </div>
-  <div class="top-right">
-    <span class="chip" id="version">v?</span>
-    <span class="chip fault" id="fault">fault: none</span>
-    <span class="live"><i></i>LIVE</span>
-  </div>
-</header>
+<div class="shell">
+  <nav class="rail">
+    <div class="logo">&#9673;</div>
+    <a class="on" href="#overview" title="Overview">&#9638;</a>
+    <a href="#alerts" title="Alerts">&#9888;</a>
+    <a href="#logs-panel" title="Logs">&#9776;</a>
+    <a href="#chaos" title="Failure injection">&#9889;</a>
+    <a href="#agent" title="Triage agent">&#9002;_</a>
+  </nav>
 
-<div class="layout">
-  <!-- ============ LEFT: the monitored service ============ -->
-  <section class="stack">
-    <div class="kpis">
-      <div class="kpi" id="t-rps" style="--accent:#2f80ff"><div class="kpi-head"><span>Requests / sec</span><span class="kpi-ico">&#9889;</span></div>
-        <div class="kpi-value"><span id="rps">-</span></div><svg class="spark" id="sp-rps" viewBox="0 0 100 30" preserveAspectRatio="none"></svg></div>
-      <div class="kpi" id="t-err" style="--accent:#10b981"><div class="kpi-head"><span>Error rate (30s)</span><span class="kpi-ico">&#128680;</span></div>
-        <div class="kpi-value"><span id="err">-</span><span class="unit">%</span></div><svg class="spark" id="sp-err" viewBox="0 0 100 30" preserveAspectRatio="none"></svg></div>
-      <div class="kpi" id="t-p95" style="--accent:#8b5cf6"><div class="kpi-head"><span>p95 latency</span><span class="kpi-ico">&#9201;</span></div>
-        <div class="kpi-value"><span id="p95">-</span><span class="unit">ms</span></div><svg class="spark" id="sp-p95" viewBox="0 0 100 30" preserveAspectRatio="none"></svg></div>
-      <div class="kpi" id="t-mem" style="--accent:#ec4899"><div class="kpi-head"><span>Memory</span><span class="kpi-ico">&#128190;</span></div>
-        <div class="kpi-value"><span id="mem">-</span><span class="unit">MB</span></div><svg class="spark" id="sp-mem" viewBox="0 0 100 30" preserveAspectRatio="none"></svg></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><span class="card-title"><span class="ti">&#128276;</span>Active alerts</span><span class="count ok" id="alert-count">0</span></div>
-      <div class="card-body"><div id="alerts"></div></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><span class="card-title"><span class="ti">&#129514;</span>Failure injection</span></div>
-      <div class="card-body groups">
-        <div><div class="group-label">Break the service</div>
-          <div class="btns">
-            <button class="inject" onclick="post('/admin/fault',{mode:'leak'})">&#128167; Memory leak</button>
-            <button class="inject" onclick="post('/admin/fault',{mode:'errors'})">&#128451; DB errors</button>
-            <button class="inject" onclick="post('/admin/fault',{mode:'slow'})">&#128012; Slow responses</button>
-            <button class="inject" onclick="post('/admin/fault',{mode:'inventory_down'})">&#128268; Dependency down</button>
-            <button class="inject" onclick="post('/admin/deploy',{version:'v1.1.0',note:'release with checkout changes'})">&#128230; Deploy bad release v1.1.0</button>
-          </div></div>
-        <div><div class="group-label">Recover</div>
-          <div class="btns">
-            <button class="recover" onclick="post('/admin/deploy',{version:'v1.0.0',note:'rollback'})">&#8630; Rollback to v1.0.0</button>
-            <button class="recover" onclick="post('/admin/fault',{mode:'none'})">&#10003; Clear fault</button>
-            <button class="recover" onclick="post('/admin/reset',{})">&#8635; Reset everything</button>
-          </div></div>
+  <main>
+    <header class="top" id="overview">
+      <div class="title"><i></i>Shop Service Monitoring Dashboard</div>
+      <div class="top-right">
+        <span id="refreshed">Refreshed 0s ago</span>
+        <span class="pill">Last 90 seconds</span>
+        <span class="pill" id="version">v?</span>
+        <span class="pill fault" id="fault">fault: none</span>
       </div>
-    </div>
+    </header>
 
-    <div class="card">
-      <div class="card-head"><span class="card-title"><span class="ti">&#128220;</span>Service logs</span></div>
-      <div class="card-body"><div id="logs"></div></div>
-    </div>
-  </section>
+    <div class="layout">
+      <!-- ============ LEFT: the monitored service ============ -->
+      <section class="col">
+        <div class="stats">
+          <div class="panel stat" id="t-rps"><div class="ph"><span class="pt">Requests / sec</span></div><div class="val"><span id="rps">-</span></div><div class="cap">last 10s</div></div>
+          <div class="panel stat" id="t-err"><div class="ph"><span class="pt">Error rate</span></div><div class="val"><span id="err">-</span><small>%</small></div><div class="cap">limit 10%</div></div>
+          <div class="panel stat" id="t-p95"><div class="ph"><span class="pt">p95 latency</span></div><div class="val"><span id="p95">-</span><small>ms</small></div><div class="cap">limit 1000 ms</div></div>
+          <div class="panel stat" id="t-mem"><div class="ph"><span class="pt">Memory</span></div><div class="val"><span id="mem">-</span><small>MB</small></div><div class="cap">limit 150 MB</div></div>
+        </div>
 
-  <!-- ============ RIGHT: the agent, a separate backend process ============ -->
-  <aside class="agent-panel">
-    <div class="chrome">
-      <div class="dots"><i></i><i></i><i></i></div>
-      <div class="proc">triage-agent &middot; separate process &middot; watching shop</div>
-      <span class="state" id="agent-status"><i></i><span id="agent-status-text">idle</span></span>
+        <div class="panel" id="alerts">
+          <div class="ph"><span class="pt">Active alerts<small id="alert-count">0 firing</small></span></div>
+          <div class="pb" style="padding:10px 0 4px"><div id="alert-body"></div></div>
+        </div>
+
+        <div class="charts">
+          <div class="panel chart"><div class="ph"><span class="pt">Error rate</span></div><svg id="c-err" viewBox="0 0 300 150"></svg><div class="legend"><b style="color:var(--red)">&#9473; error %</b><b>&#9548; limit</b></div></div>
+          <div class="panel chart"><div class="ph"><span class="pt">p95 latency</span></div><svg id="c-p95" viewBox="0 0 300 150"></svg><div class="legend"><b style="color:var(--violet)">&#9473; ms</b><b>&#9548; limit</b></div></div>
+          <div class="panel chart"><div class="ph"><span class="pt">Memory</span></div><svg id="c-mem" viewBox="0 0 300 150"></svg><div class="legend"><b style="color:var(--teal)">&#9473; MB</b><b>&#9548; limit</b></div></div>
+        </div>
+
+        <div class="panel" id="logs-panel">
+          <div class="term-head"><span><span class="prompt">$ tail -f /var/log/shop/app.log</span></span><span>shop.service</span></div>
+          <div id="logs"></div>
+        </div>
+
+        <div class="panel" id="chaos">
+          <div class="term-head"><span><span class="prompt">$ chaos</span></span><span>failure injection</span></div>
+          <div class="pb groups">
+            <div><div class="glabel"># inject</div>
+              <div class="btns">
+                <button class="inject" onclick="post('/admin/fault',{mode:'leak'})">memory-leak</button>
+                <button class="inject" onclick="post('/admin/fault',{mode:'errors'})">db-errors</button>
+                <button class="inject" onclick="post('/admin/fault',{mode:'slow'})">slow-responses</button>
+                <button class="inject" onclick="post('/admin/fault',{mode:'inventory_down'})">dependency-down</button>
+                <button class="inject" onclick="post('/admin/deploy',{version:'v1.1.0',note:'release with checkout changes'})">deploy v1.1.0 (bad)</button>
+              </div></div>
+            <div><div class="glabel"># recover</div>
+              <div class="btns">
+                <button class="recover" onclick="post('/admin/deploy',{version:'v1.0.0',note:'rollback'})">rollback v1.0.0</button>
+                <button class="recover" onclick="post('/admin/fault',{mode:'none'})">clear-fault</button>
+                <button class="recover" onclick="post('/admin/reset',{})">reset</button>
+              </div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ RIGHT: the agent, a separate backend process ============ -->
+      <aside class="agent" id="agent">
+        <div class="chrome">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="who">triage-agent@shop:~$</div>
+          <span class="state" id="agent-status">IDLE</span>
+        </div>
+        <div id="incident"></div>
+        <div class="term-bar"><span>$ journalctl -fu triage-agent</span><label><input type="checkbox" id="verbose"> show reasoning</label></div>
+        <div id="timeline"></div>
+        <div class="guard"><span>read-only tools</span><span>action allowlist</span><span>human approval</span><span>audit log</span></div>
+      </aside>
+      <div class="foot">Simulated service for the Triage Agent project &middot; refreshes every second</div>
     </div>
-    <div class="agent-intro">
-      <div class="agent-title"><span class="robot">&#129302;</span>Triage Agent</div>
-      <div class="agent-sub">Investigates alerts on its own and proposes a fix. A human approves anything that changes the system.</div>
-      <div class="stats">
-        <div class="stat"><div class="k">Checks run</div><div class="v" id="st-steps">0</div></div>
-        <div class="stat"><div class="k">Elapsed</div><div class="v" id="st-time">0s</div></div>
-        <div class="stat"><div class="k">Outcome</div><div class="v" id="st-out">&mdash;</div></div>
-      </div>
-    </div>
-    <div id="approval"></div>
-    <div id="timeline"></div>
-    <div class="guard"><span>&#128274; Read-only tools</span><span>&#128737; Action allowlist</span><span>&#128100; Human approval</span><span>&#128221; Audit log</span></div>
-  </aside>
+  </main>
 </div>
-<div class="foot">Simulated service for the Triage Agent project &middot; metrics refresh every second</div>
 
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clock = iso => new Date(iso).toLocaleTimeString([], {hour12:false});
 function post(path, body) { return fetch(path, {method:'POST', body:JSON.stringify(body)}).then(() => { refresh(); refreshAgent(); }); }
 
 // ---------------- service side ----------------
-const hist = {rps:[], err:[], p95:[], mem:[]};
-const BASE = {rps:'#2f80ff', err:'#10b981', p95:'#8b5cf6', mem:'#ec4899'};
-const LEVEL = {warn:'#f59e0b', bad:'#ef4444'};
-function push(key, v) { hist[key].push(v); if (hist[key].length > 60) hist[key].shift(); }
-function spark(key, lvl) {
-  const arr = hist[key], svg = $('sp-' + key), color = lvl === 'ok' ? BASE[key] : LEVEL[lvl];
-  if (arr.length < 2) return;
-  const min = Math.min(...arr), max = Math.max(...arr), span = max - min;
-  const pts = arr.map((v, i) => `${(i / (arr.length - 1) * 100).toFixed(1)},${(span < 1e-9 ? 15 : 26 - ((v - min) / span) * 22).toFixed(1)}`);
-  svg.innerHTML = `<polygon points="0,30 ${pts.join(' ')} 100,30" fill="${color}" opacity=".13"/>` +
-                  `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`;
+const N = 90, hist = {err:[], p95:[], mem:[]};
+let lastRefresh = Date.now();
+const NICE = [1,2,5,10,20,50,100,200,500,1000,2000,5000,10000];
+function chart(id, arr, limit, color, unit) {
+  const svg = $(id); if (arr.length < 2) return;
+  const W = 300, H = 150, L = 34, R = 8, T = 10, B = 20;
+  const want = Math.max(limit * 1.25, ...arr, 1), yMax = NICE.find(n => n >= want) || want;
+  const x = i => L + ((i + (N - arr.length)) / (N - 1)) * (W - L - R), y = v => T + (1 - Math.min(v, yMax) / yMax) * (H - T - B);
+  let g = '';
+  for (let k = 0; k <= 4; k++) {
+    const v = yMax * k / 4, yy = y(v);
+    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="#1c2029"/><text x="${L - 4}" y="${yy + 3}" text-anchor="end">${+v.toFixed(1)}</text>`;
+  }
+  [['-90s', 0], ['-60s', 30], ['-30s', 60], ['now', 89]].forEach(([t, i]) => {
+    g += `<text x="${L + (i / (N - 1)) * (W - L - R)}" y="${H - 5}" text-anchor="${i === 89 ? 'end' : 'middle'}">${t}</text>`;
+  });
+  const pts = arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const ly = y(limit);
+  svg.innerHTML = g + `<line x1="${L}" x2="${W - R}" y1="${ly}" y2="${ly}" stroke="#e3b341" stroke-dasharray="3 3" opacity=".8"/>` +
+    `<polygon points="${x(0)},${H - B} ${pts} ${x(arr.length - 1)},${H - B}" fill="${color}" opacity=".12"/>` +
+    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>`;
 }
-function level(tile, key, lvl) { $(tile).className = 'kpi ' + (lvl === 'ok' ? '' : lvl); spark(key, lvl); }
+function level(id, lvl) { $(id).className = 'panel stat ' + (lvl === 'ok' ? '' : lvl); }
 
 const ALERT_META = {
-  HighErrorRate:  {label:'High error rate',    key:'error_rate_pct', limit:10,   unit:'%',   icon:'&#128680;'},
-  HighLatencyP95: {label:'High latency (p95)', key:'p95_latency_ms', limit:1000, unit:' ms', icon:'&#9201;'},
-  HighMemory:     {label:'High memory usage',  key:'memory_mb',      limit:150,  unit:' MB', icon:'&#128190;'},
+  HighErrorRate:  {label:'HighErrorRate',  key:'error_rate_pct', limit:10,   unit:'%'},
+  HighLatencyP95: {label:'HighLatencyP95', key:'p95_latency_ms', limit:1000, unit:' ms'},
+  HighMemory:     {label:'HighMemory',     key:'memory_mb',      limit:150,  unit:' MB'},
 };
-function renderAlert(a, m) {
-  const meta = ALERT_META[a.alert], sev = a.severity === 'critical' ? '' : 'warning';
-  let meter = '';
-  if (meta) {
-    const val = m[meta.key], pct = Math.min(100, val / (meta.limit * 3) * 100);
-    meter = `<div class="meter"><div class="fill" style="width:${pct}%"></div><div class="mark"></div></div>
-             <div class="meter-labels"><span>now <b>${esc(val)}${meta.unit}</b></span><span>threshold ${meta.limit}${meta.unit}</span></div>`;
-  }
-  return `<div class="alert ${sev}"><div class="aico">${meta ? meta.icon : '&#9888;'}</div><div class="body">
-    <div class="top"><span class="badge">${esc(a.severity.toUpperCase())}</span><span class="name">${esc(meta ? meta.label : a.alert)}</span></div>
-    <div class="sum">${esc(a.summary)}</div>${meter}</div></div>`;
+function alertsTable(a, m) {
+  if (!a.length) return `<div class="healthy" style="padding:6px 14px 10px"><span>$ alerts --firing</span><br>&#10003; 0 firing. All systems healthy.</div>`;
+  return `<table><tr><th>Severity</th><th>Alert</th><th>Now</th><th>Limit</th><th style="width:26%">Usage</th></tr>` + a.map(x => {
+    const meta = ALERT_META[x.alert] || {}, sev = x.severity === 'critical' ? 'critical' : 'warning';
+    const val = meta.key ? m[meta.key] : '', pct = meta.limit ? Math.min(100, val / (meta.limit * 3) * 100) : 0;
+    return `<tr><td><span class="sev ${sev}">${esc(sev.toUpperCase())}</span></td><td>${esc(x.alert)}</td>
+      <td style="color:${sev === 'critical' ? 'var(--red)' : 'var(--yellow)'}">${esc(val)}${meta.unit || ''}</td><td>${esc(meta.limit ?? '')}${meta.unit || ''}</td>
+      <td><div class="bar ${sev}"><i style="width:${pct}%"></i><u></u></div></td></tr>`;
+  }).join('') + `</table>`;
 }
 
 async function refresh() {
   try {
-    const [m, a, l] = await Promise.all(['/api/metrics','/api/alerts','/api/logs?n=40'].map(u => fetch(u).then(r => r.json())));
+    const [m, a, l] = await Promise.all(['/api/metrics','/api/alerts','/api/logs?n=60'].map(u => fetch(u).then(r => r.json())));
+    lastRefresh = Date.now();
     $('version').textContent = m.version;
-    $('fault').textContent = 'fault: ' + m.fault; $('fault').className = 'chip fault' + (m.fault !== 'none' ? ' active' : '');
-    $('rps').textContent = m.requests_per_sec; $('err').textContent = m.error_rate_pct;
-    $('p95').textContent = m.p95_latency_ms;   $('mem').textContent = m.memory_mb;
-    push('rps', m.requests_per_sec); push('err', m.error_rate_pct); push('p95', m.p95_latency_ms); push('mem', m.memory_mb);
-    level('t-rps', 'rps', 'ok');
-    level('t-err', 'err', m.error_rate_pct > 10 ? 'bad' : m.error_rate_pct > 2 ? 'warn' : 'ok');
-    level('t-p95', 'p95', m.p95_latency_ms > 1000 ? 'bad' : m.p95_latency_ms > 400 ? 'warn' : 'ok');
-    level('t-mem', 'mem', m.memory_mb > 150 ? 'bad' : m.memory_mb > 100 ? 'warn' : 'ok');
-    $('alert-count').textContent = a.length; $('alert-count').className = 'count ' + (a.length ? 'bad' : 'ok');
-    $('alerts').innerHTML = a.length ? a.map(x => renderAlert(x, m)).join('')
-      : `<div class="healthy"><div class="ok-ico">&#10003;</div><div><b>All systems healthy</b><small>No alert rules are firing.</small></div></div>`;
+    $('fault').textContent = 'fault: ' + m.fault; $('fault').className = 'pill fault' + (m.fault !== 'none' ? ' active' : '');
+    $('rps').textContent = m.requests_per_sec; $('err').textContent = m.error_rate_pct; $('p95').textContent = m.p95_latency_ms; $('mem').textContent = m.memory_mb;
+    level('t-err', m.error_rate_pct > 10 ? 'bad' : m.error_rate_pct > 2 ? 'warn' : 'ok');
+    level('t-p95', m.p95_latency_ms > 1000 ? 'bad' : m.p95_latency_ms > 400 ? 'warn' : 'ok');
+    level('t-mem', m.memory_mb > 150 ? 'bad' : m.memory_mb > 100 ? 'warn' : 'ok');
+    for (const [k, v] of [['err', m.error_rate_pct], ['p95', m.p95_latency_ms], ['mem', m.memory_mb]]) { hist[k].push(v); if (hist[k].length > N) hist[k].shift(); }
+    chart('c-err', hist.err, 10, '#ff7b72'); chart('c-p95', hist.p95, 1000, '#b392f0'); chart('c-mem', hist.mem, 150, '#7fd6c2');
+    $('alert-count').textContent = a.length + ' firing';
+    $('alert-body').innerHTML = alertsTable(a, m);
     const box = $('logs'), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
-    box.innerHTML = l.map(e => `<div class="${esc(e.level)}">${esc(e.ts.slice(11,19))} ${esc(e.level)} [${esc(e.version)}] ${esc(e.msg)}</div>`).join('');
+    box.innerHTML = l.map(e => `<div><span class="t">${esc(clock(e.ts))}</span> <span class="host">shop[${esc(e.version)}]</span> <span class="lvl-${esc(e.level)}">${esc(e.level.padEnd(5))}</span> <span class="msg-${esc(e.level)}">${esc(e.msg)}</span></div>`).join('');
     if (atBottom) box.scrollTop = box.scrollHeight;
-  } catch (e) { $('alerts').innerHTML = '<div class="alert"><div class="aico">&#9888;</div><div class="body"><span class="name">Service unreachable</span></div></div>'; }
+  } catch (e) { $('alert-body').innerHTML = '<div class="healthy" style="color:var(--red);padding:6px 14px 10px">service unreachable</div>'; }
 }
+setInterval(() => { $('refreshed').textContent = `Refreshed ${Math.round((Date.now() - lastRefresh) / 1000)}s ago`; }, 1000);
 
 // ---------------- agent side. All text comes from the agent/model, so it is always escaped. ----------------
-const ICONS = {run_started:'🔔', thinking:'💭', thought:'💬', tool_call:'🔧', tool_result:'↳', diagnosis:'🧠',
-               policy:'🛡️', approval:'👤', action:'⚙️', verification:'✅', outcome:'🏁'};
-let lastKey = '', seenId = null;  // only steps newer than seenId fade in, so re-renders don't flicker
-function renderStep(e, t0) {
-  const secs = Math.max(0, Math.round((new Date(e.ts) - t0) / 1000));
-  let detail = e.detail ? `<div class="detail">${esc(e.detail)}</div>` : '';
-  if (e.kind === 'diagnosis' && e.evidence) {
-    const conf = typeof e.confidence === 'number'
-      ? `<div class="conf"><span>confidence ${Math.round(e.confidence * 100)}%</span><div class="track"><i style="width:${Math.round(e.confidence * 100)}%"></i></div></div>` : '';
-    detail = `<div class="detail" style="color:var(--text)"><b>${esc(e.root_cause)}</b></div><ul class="evidence">` +
-             e.evidence.map(x => `<li>${esc(x)}</li>`).join('') + `</ul>` + detail + conf;
-  }
-  const cls = [e.kind, e.tone, seenId !== null && e.id > seenId ? 'fresh' : ''].filter(Boolean).join(' ');
-  return `<div class="step ${esc(cls)}"><div class="rail"><div class="node">${ICONS[e.kind] || '•'}</div></div>` +
-         `<div class="content"><div class="title">${esc(e.title)}</div>${detail}</div><div class="time">+${secs}s</div></div>`;
+let lastKey = '', seenId = null;
+const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
+function incidentStatus(run, approval) {
+  const last = run[run.length - 1];
+  if (approval.status === 'pending') return ['AWAITING APPROVAL', 'wait'];
+  if (last.kind === 'outcome') return [last.title.split(':')[0].toUpperCase(), last.tone === 'good' ? 'good' : last.tone === 'bad' ? 'bad' : 'warn'];
+  if (run.some(e => e.kind === 'action') || approval.status === 'approved') return ['APPLYING FIX', 'live'];
+  if (run.some(e => e.kind === 'diagnosis')) return ['CHECKING POLICY', 'live'];
+  return ['INVESTIGATING', 'live'];
 }
-function setState(cls, text) { $('agent-status').className = 'state ' + cls; $('agent-status-text').textContent = text; }
+function renderIncident(run, approval) {
+  if (!run.length) return `<div class="inc-title"><span>INCIDENT</span></div><div class="idle"><span class="prompt" style="color:var(--green)">$</span> no active incident. <b>watching for alerts</b>…</div>`;
+  const start = run.find(e => e.kind === 'run_started'), diag = [...run].reverse().find(e => e.kind === 'diagnosis');
+  const prop = approval.proposal;
+  const [status, tone] = incidentStatus(run, approval);
+  const alertName = start ? start.title.replace(/^Alert detected: /, '') : '—';
+  const action = diag && diag.action ? diag.action : (prop ? prop.type : null);
+  const target = diag && diag.target_version ? diag.target_version : (prop && prop.target_version) || '';
+  const conf = diag && typeof diag.confidence === 'number' ? Math.round(diag.confidence * 100) + '% confidence' : '';
+  const ev = diag && diag.evidence ? diag.evidence.slice(0, 2).map(x => `<li>${esc(clip(x, 90))}</li>`).join('') : '';
+  let html = `<div class="inc-title"><span>INCIDENT</span><span>${esc(clock(run[0].ts))}</span></div><div class="kv">
+    <div class="k">ALERT</div><div class="v">${esc(alertName)}</div>
+    <div class="k">PROBLEM</div><div class="v big">${diag ? esc(clip(diag.root_cause, 110)) : '<span class="idle">analysing…</span>'}</div>`;
+  if (ev) html += `<div class="k">EVIDENCE</div><div class="v"><ul>${ev}</ul></div>`;
+  html += `<div class="k">ACTION</div><div class="v">${action ? `<span class="act">${esc(action)}${target ? ' → ' + esc(target) : ''}</span><span class="conf">${esc(conf)}</span>` : '<span class="idle">—</span>'}</div>
+    <div class="k">STATUS</div><div class="v"><span class="status ${tone}">${esc(status)}</span></div></div>`;
+  if (approval.status === 'pending' && prop)
+    html += `<div class="approve-row"><button class="approve" onclick="decide('approved')">Approve ${esc(prop.type)}</button><button class="deny" onclick="decide('denied')">Deny</button></div>`;
+  return html;
+}
+
+function renderLine(e, verbose, prevCall) {
+  const fresh = seenId !== null && e.id > seenId ? ' fresh' : '', ts = `<span class="ts">${esc(clock(e.ts))}</span>`;
+  const row = (cls, body) => `<div class="ln ${cls}${fresh}">${ts}<span class="tx">${body}</span></div>`;
+  switch (e.kind) {
+    case 'run_started': return row('', `<span class="tag alert">[ALERT]</span> ${esc(e.title.replace(/^Alert detected: /, ''))} firing: ${esc(clip(e.detail, 110))}`);
+    case 'tool_call':   return row('cmd', esc(e.tool || e.title) + (e.detail && e.detail !== '{}' ? ' ' + esc(e.detail) : ''));
+    case 'tool_result': return row('res', esc(clip(e.detail, 260)));
+    case 'diagnosis':   return row('', `<span class="tag diag">[DIAGNOSIS]</span> ${esc(clip(e.root_cause, 120))}`);
+    case 'policy':      return row('', `<span class="tag policy">[POLICY]</span> ${esc(e.title.replace('Policy check: ', ''))}${e.detail && e.tone === 'warn' ? ' — ' + esc(clip(e.detail, 100)) : ''}`);
+    case 'approval':    return row('', `<span class="tag human">[HUMAN]</span> ${esc(e.title.replace('Human ', ''))}`);
+    case 'action':      return row('', `<span class="tag action">[ACTION]</span> ${esc(e.title.replace('Executed: ', ''))}`);
+    case 'verification':return row('', `<span class="tag verify">[VERIFY]</span> ${esc(e.title.replace('Verified: ', ''))}`);
+    case 'outcome':     return row('', `<span class="tag ${e.tone === 'good' ? 'done' : e.tone === 'bad' ? 'bad' : 'warn'}">[DONE]</span> ${esc(e.title)}`);
+    case 'thought':     return verbose ? row('dim', esc(clip(e.detail, 300))) : '';
+    case 'thinking':    return verbose ? row('dim', esc(e.title)) : '';
+    default: return '';
+  }
+}
+
 async function refreshAgent() {
   try {
     const {events, approval} = await fetch('/api/agent/events').then(r => r.json());
-    const key = events.length + ':' + (events.length ? events[events.length-1].id : 0) + ':' + approval.status;
+    const verbose = $('verbose').checked;
+    const key = events.length + ':' + (events.length ? events[events.length-1].id : 0) + ':' + approval.status + ':' + verbose;
     if (key === lastKey) return;
     lastKey = key;
-    const t0 = events.length ? new Date(events[0].ts) : new Date();
+    // focus on the current incident: everything since the latest alert
+    let startIdx = 0; events.forEach((e, i) => { if (e.kind === 'run_started') startIdx = i; });
+    const run = events.slice(startIdx);
+
+    $('incident').innerHTML = renderIncident(run, approval);
     const box = $('timeline'), atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-    box.innerHTML = events.length ? events.map(e => renderStep(e, t0)).join('')
-      : '<div class="empty"><b>$ waiting for alerts_</b>When an alert fires, every step the agent takes appears here.</div>';
+    box.innerHTML = run.length ? run.map(e => renderLine(e, verbose)).join('')
+      : '<div class="empty-term"><span class="prompt">$ waiting for alerts</span></div>';
     if (atBottom) box.scrollTop = box.scrollHeight;
     seenId = events.length ? events[events.length-1].id : (seenId ?? 0);
 
-    const last = events.length ? events[events.length-1] : null;
-    if (approval.status === 'pending') setState('wait', 'awaiting approval');
-    else if (!last) setState('', 'idle');
-    else if (last.kind === 'outcome') setState('done', 'finished');
-    else setState('live', 'investigating');
-    $('st-steps').textContent = events.filter(e => e.kind === 'tool_call').length;
-    $('st-time').textContent = last ? Math.round((new Date(last.ts) - t0) / 1000) + 's' : '0s';
-    $('st-out').textContent = last && last.kind === 'outcome' ? last.title.replace(/^[^:]*: /, '').split(':')[0].slice(0, 14) : '—';
-
-    const p = approval.proposal;
-    $('approval').innerHTML = approval.status === 'pending' && p
-      ? `<div class="box"><div class="head">Approval needed</div>
-         <div class="what">Proposed: <b>${esc(p.type)}${p.target_version ? ' to ' + esc(p.target_version) : ''}</b> &middot; confidence ${Math.round((approval.confidence || 0) * 100)}%</div>
-         <div class="why">${esc(approval.root_cause)}</div>
-         <div class="actions"><button class="approve" onclick="decide('approved')">Approve</button>
-         <button class="deny" onclick="decide('denied')">Deny</button></div></div>` : '';
+    const st = $('agent-status');
+    if (!run.length) { st.className = 'state'; st.textContent = 'IDLE'; }
+    else { const [text, tone] = incidentStatus(run, approval); st.className = 'state ' + ({wait:'wait', live:'live', good:'done', bad:'bad', warn:'wait'}[tone]); st.textContent = clip(text, 22); }
   } catch (e) { /* page keeps working if the endpoint is briefly unavailable */ }
 }
 function decide(d) { fetch('/api/agent/approval/decision', {method:'POST', body:JSON.stringify({decision:d})}).then(refreshAgent); }
+$('verbose').addEventListener('change', refreshAgent);
 
 refresh(); setInterval(refresh, 1000);
 refreshAgent(); setInterval(refreshAgent, 1000);

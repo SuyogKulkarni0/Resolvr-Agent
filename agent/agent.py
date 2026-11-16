@@ -201,7 +201,7 @@ def run_triage(client, verbose=True, model=None, emit=no_report):
             if verbose:
                 print(f"  [tool]  {block.name}({json.dumps(block.input)})")
             emit("tool_call", TOOL_LABELS.get(block.name, block.name),
-                 json.dumps(block.input) if block.input else "")
+                 json.dumps(block.input) if block.input else "", tool=block.name)
             raw = run_tool(block.name, block.input)
             emit("tool_result", "Found", summarize_result(block.name, raw))
             results.append({"type": "tool_result", "tool_use_id": block.id, "content": raw})
@@ -265,7 +265,8 @@ def main():
                      + (f" to {act['target_version']}" if act.get("target_version") else "")
                      + f" ({act['detail']}). Confidence {diagnosis['confidence']:.0%}.",
                      root_cause=diagnosis["root_cause"], evidence=diagnosis["evidence"],
-                     confidence=diagnosis["confidence"])
+                     confidence=diagnosis["confidence"], action=act["type"],
+                     target_version=act.get("target_version", ""))
                 if args.diagnose_only:
                     emit("outcome", "Diagnosis only: no action taken", tone="warn")
                 else:
