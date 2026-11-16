@@ -19,6 +19,8 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 
+import guardrails
+
 SHOP_URL = os.getenv("SHOP_URL", "http://localhost:8090")
 MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-5-5")
 MAX_TURNS = 8
@@ -33,8 +35,9 @@ Method:
    shortly before the problem began? Compare log version tags with the deploy history.
 3. Form the most likely root cause from evidence only. Do not invent facts.
 
-Proposed action must be one of: rollback (name the version), clear_fault, restart,
-escalate_to_human, none. Use escalate_to_human when evidence is weak or conflicting.
+Proposed action must be one of: rollback (also set target_version to the last good
+version from the deploy history), clear_fault, restart, escalate_to_human, none.
+Your action is only a proposal: a policy layer and a human approve it before anything runs. Use escalate_to_human when evidence is weak or conflicting.
 Confidence is 0.0-1.0 and must reflect how conclusive the evidence is."""
 
 TOOLS = [
@@ -56,7 +59,9 @@ TOOLS = [
                       "description": "Specific observations that support the root cause"},
          "proposed_action": {"type": "object", "properties": {
              "type": {"type": "string", "enum": ["rollback", "clear_fault", "restart", "escalate_to_human", "none"]},
-             "detail": {"type": "string"}}, "required": ["type", "detail"]},
+             "detail": {"type": "string"},
+             "target_version": {"type": "string", "description": "Required for rollback: the version to roll back to"}},
+             "required": ["type", "detail"]},
          "confidence": {"type": "number", "minimum": 0, "maximum": 1}},
       "required": ["root_cause", "evidence", "proposed_action", "confidence"]}},
 ]
@@ -126,6 +131,8 @@ def report(diagnosis):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--watch", action="store_true", help="poll for alerts every 10 seconds")
+    parser.add_argument("--dry-run", action="store_true", help="ask for approval but never execute")
+    parser.add_argument("--diagnose-only", action="store_true", help="skip the action phase entirely")
     args = parser.parse_args()
     if not os.getenv("ANTHROPIC_API_KEY"):
         sys.exit("ANTHROPIC_API_KEY is not set.")
@@ -137,7 +144,12 @@ def main():
         if alerts:
             print(f"{len(alerts)} alert(s) firing: {', '.join(a['alert'] for a in alerts)}. Investigating...")
             diagnosis = run_triage(client)
-            report(diagnosis) if diagnosis else print("Agent did not reach a diagnosis; escalate to a human.")
+            if diagnosis:
+                report(diagnosis)
+                if not args.diagnose_only:
+                    guardrails.handle(diagnosis, dry_run=args.dry_run)
+            else:
+                print("Agent did not reach a diagnosis; escalate to a human.")
             if args.watch:
                 time.sleep(60)  # avoid re-triaging the same incident immediately
         elif not args.watch:

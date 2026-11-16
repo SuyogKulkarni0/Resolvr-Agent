@@ -53,6 +53,25 @@ Tests use a scripted fake model, so they need no API key or running service:
 cd agent && python -m unittest -v
 ```
 
+## Phase 3: guarded actions
+
+The model only proposes; `agent/guardrails.py` decides whether anything runs.
+
+| Guardrail | Rule |
+|---|---|
+| Allowlist | Only `rollback` and `clear_fault`. Anything else (for example `restart`) escalates to a human |
+| Known-good target | Rollback only to versions in `KNOWN_GOOD_VERSIONS` |
+| Confidence floor | Below 70% the agent escalates and does not even ask for approval |
+| Rate limit | At most 3 executed actions per hour |
+| Human approval | Explicit `y` required, default is No |
+| Verification | After acting, alerts are re-checked for up to 45 s; if they persist, it escalates |
+| Audit log | Every step (diagnosis, approved/denied, executed, verified) goes to `data/audit.jsonl` |
+
+```bash
+python agent/agent.py                  # diagnose, ask approval, act, verify
+python agent/agent.py --dry-run        # approval flow, but never executes
+python agent/agent.py --diagnose-only  # Phase 2 behaviour
+```
+
 ## Next phases
-3. Guarded actions with human approval and an audit log.
 4. Eval over injected incidents, README diagram, demo GIF.
