@@ -36,6 +36,18 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(blocks[0].input, {"n": 5})
         self.assertEqual(blocks[1].input, {})
 
+    def test_model_is_kept_loaded_between_incidents(self):
+        sent = []
+
+        def fake_urlopen(req, timeout=None):
+            sent.append(json.loads(req.data))
+            return io.BytesIO(json.dumps({"message": {"content": "hi"}}).encode())
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             mock.patch.dict("os.environ", {}, clear=False):
+            oc.OllamaClient().create(model="m", system="s", tools=[], messages=[{"role": "user", "content": "x"}])
+        self.assertEqual(sent[0]["keep_alive"], "30m")
+
     def test_agent_loop_runs_on_ollama_client(self):
         diagnosis = {"root_cause": "x", "evidence": ["y"],
                      "proposed_action": {"type": "none", "detail": "d"}, "confidence": 0.5}

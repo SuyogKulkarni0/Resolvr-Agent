@@ -69,7 +69,9 @@ class OllamaClient:
         self.messages = NS(create=self.create)
 
     def create(self, model, system, tools, messages, max_tokens=1500, **_):
-        payload = {"model": model, "stream": False,
+        # keep_alive: leave the model in memory between incidents. Loading it from disk costs
+        # 20-60 s on a CPU laptop, and Ollama's default is to unload after only 5 minutes.
+        payload = {"model": model, "stream": False, "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "30m"),
                    "messages": to_ollama_messages(system, messages),
                    "tools": to_ollama_tools(tools),
                    "options": {"temperature": 0, "num_predict": max_tokens,
