@@ -1,6 +1,6 @@
-# Triage Agent: an AI on-call engineer for monitoring
+# Resolvr-Agent: the AI on-call agent that fixes incidents, but only with your approval
 
-[![tests](https://github.com/SuyogKulkarni0/agentic-ai-monitoring-tool/actions/workflows/tests.yml/badge.svg)](https://github.com/SuyogKulkarni0/agentic-ai-monitoring-tool/actions/workflows/tests.yml)
+[![tests](https://github.com/SuyogKulkarni0/resolvr-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/SuyogKulkarni0/resolvr-agent/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 
@@ -13,8 +13,8 @@ When an alert fires, an AI agent investigates it like an on-call engineer: it re
 Needs Python 3.9+ and nothing else (standard library only). On macOS/Linux use `python3`.
 
 ```bash
-git clone https://github.com/SuyogKulkarni0/agentic-ai-monitoring-tool.git
-cd agentic-ai-monitoring-tool
+git clone https://github.com/SuyogKulkarni0/resolvr-agent.git
+cd resolvr-agent
 python run_demo.py              # starts the service and opens the dashboard
 python run_demo.py --agent      # ...and starts the AI agent too
 ```
@@ -47,7 +47,7 @@ Then click **deploy v1.1.0 (bad)** under *Failure injection*. The alert fires, t
 | **Processes** | A `ps`-style table with memory bars | Which process is using the memory and CPU |
 | **Ask (chat box)** | Type or click: services, database, memory, CPU, alerts | Instant read-only answers from live data. No model call, so it is fast, and it cannot change anything |
 | **Failure injection** | Terminal-style buttons | Break the service on purpose, or put it back |
-| **Triage Agent** | Separate panel with step cards | What the AI is doing, the incident summary, and the Approve / Deny buttons |
+| **Resolvr** | Separate panel with step cards | What the AI is doing, the incident summary, and the Approve / Deny buttons |
 
 The *Live checks* stream is the evidence. A real run looks like this:
 
@@ -57,7 +57,7 @@ ALERT   HighErrorRate   5xx error rate 18.7% exceeds 10%                FIRING
 CHECK   error_rate_pct  47.6% > 10%                                      FAIL
 AGENT   operator        approved the action                              APPROVED
 CHANGE  deploy          v1.0.0 deployed (automated rollback)
-ACTION  triage-agent    rollback to v1.0.0 applied                       DONE
+ACTION  resolvr          rollback to v1.0.0 applied                       DONE
 ALERT   HighErrorRate   5xx error rate back to 9.7% after 79s            RESOLVED
 CHECK   error_rate_pct  8.3% <= 10%                                      PASS
 ```

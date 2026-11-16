@@ -1,5 +1,5 @@
 """
-Triage Agent (Phase 2: read-only).
+Resolvr, the triage agent (Phase 2: read-only).
 
 When the shop service has firing alerts, this agent investigates using read-only
 tools (alerts, metrics, logs, deploy history) and submits a structured diagnosis:
@@ -27,7 +27,7 @@ MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-5-5")
 MAX_TURNS = 8
 OUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "diagnoses.jsonl")
 
-SYSTEM_PROMPT = """You are an SRE triage agent for a service called "shop".
+SYSTEM_PROMPT = """You are Resolvr, an SRE triage agent for a service called "shop".
 An alert is firing. Investigate with the read-only tools, then call submit_diagnosis exactly once.
 
 Method:

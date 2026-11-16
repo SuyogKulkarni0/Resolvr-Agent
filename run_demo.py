@@ -3,7 +3,7 @@
 One-command demo launcher (Windows, macOS, Linux; Python standard library only).
 
     python run_demo.py            # start the shop service and open the dashboard
-    python run_demo.py --agent    # ...and also start the triage agent in watch mode
+    python run_demo.py --agent    # ...and also start Resolvr in watch mode
 
 With --agent the agent picks its brain automatically: the Claude API if ANTHROPIC_API_KEY is
 set, otherwise a local Ollama model if one is running, otherwise it is skipped with a hint.
@@ -40,7 +40,7 @@ def pick_backend():
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, default=8090, help="port for the dashboard (default 8090)")
-    p.add_argument("--agent", action="store_true", help="also start the triage agent (watch mode, approvals in the browser)")
+    p.add_argument("--agent", action="store_true", help="also start Resolvr (watch mode, approvals in the browser)")
     p.add_argument("--no-browser", action="store_true", help="do not open the browser")
     args = p.parse_args()
 
@@ -67,7 +67,7 @@ def main():
         if args.agent:
             backend = pick_backend()
             if backend:
-                print(f"Starting the triage agent ({backend}). Approve or deny fixes in the browser.")
+                print(f"Starting Resolvr ({backend}). Approve or deny fixes in the browser.")
                 procs.append(subprocess.Popen(
                     [sys.executable, os.path.join(ROOT, "agent", "agent.py"), "--watch", "--browser-approval", "--backend", backend],
                     env=env))
@@ -76,7 +76,7 @@ def main():
                       "  - Claude API: set ANTHROPIC_API_KEY and re-run, or\n"
                       "  - Local model: install Ollama (https://ollama.com), run `ollama pull qwen2.5:7b`, and re-run.")
         else:
-            print("Tip: add --agent to also start the triage agent.")
+            print("Tip: add --agent to also start Resolvr.")
 
         if not args.no_browser:
             webbrowser.open(url)

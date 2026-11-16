@@ -1,5 +1,5 @@
 """
-Demo "Shop" service for the Triage Agent project.
+Demo "Shop" service for the Resolvr project.
 
 Zero dependencies (Python standard library only). It simulates a small production
 service that you can break on purpose, so a monitoring agent has something real to
@@ -91,19 +91,19 @@ def mirror_agent_event(e):
     """Show the agent's key steps in the checks stream, so the fix sits between the failing and passing checks."""
     kind = e.get("kind")
     if kind == "run_started":
-        log_check("AGENT", "triage-agent", "alert received, investigating")
+        log_check("AGENT", "resolvr", "alert received, investigating")
     elif kind == "diagnosis":
         target = f" to {e['target_version']}" if e.get("target_version") else (f" {e['target']}" if e.get("target") else "")
-        log_check("AGENT", "triage-agent", f"proposes {e.get('action', 'action')}{target}", "PROPOSED")
+        log_check("AGENT", "resolvr", f"proposes {e.get('action', 'action')}{target}", "PROPOSED")
     elif kind == "approval":
         log_check("AGENT", "operator", str(e.get("title", "")).lower().replace("human ", ""),
                   "APPROVED" if "approved" in str(e.get("title", "")) else "DENIED")
     elif kind == "action":
-        log_check("ACTION", "triage-agent", str(e.get("title", "")).replace("Executed: ", "") + " applied", "DONE")
+        log_check("ACTION", "resolvr", str(e.get("title", "")).replace("Executed: ", "") + " applied", "DONE")
     elif kind == "verification":
-        log_check("AGENT", "triage-agent", e.get("title", "verification"), "PASS" if e.get("recovered") else "FAIL")
+        log_check("AGENT", "resolvr", e.get("title", "verification"), "PASS" if e.get("recovered") else "FAIL")
     elif kind == "outcome":
-        log_check("AGENT", "triage-agent", e.get("title", ""), "")
+        log_check("AGENT", "resolvr", e.get("title", ""), "")
 
 
 def add_agent_event(body):
