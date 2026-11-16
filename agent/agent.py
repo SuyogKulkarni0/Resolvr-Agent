@@ -264,7 +264,8 @@ def main():
                      f"Proposed action: {act['type']}"
                      + (f" to {act['target_version']}" if act.get("target_version") else "")
                      + f" ({act['detail']}). Confidence {diagnosis['confidence']:.0%}.",
-                     root_cause=diagnosis["root_cause"], evidence=diagnosis["evidence"])
+                     root_cause=diagnosis["root_cause"], evidence=diagnosis["evidence"],
+                     confidence=diagnosis["confidence"])
                 if args.diagnose_only:
                     emit("outcome", "Diagnosis only: no action taken", tone="warn")
                 else:
