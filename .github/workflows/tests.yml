@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # The code uses only the standard library, so there is nothing to pip install.
+      - name: Agent, guardrails and live-view tests
+        working-directory: agent
+        run: python -m unittest -v
+      - name: Eval scoring tests
+        working-directory: eval
+        run: python -m unittest -v
+      - name: Demo service starts and serves its API
+        run: |
+          PORT=8090 python demo_app/app.py &
+          for i in $(seq 1 20); do curl -sf localhost:8090/health && break; sleep 0.5; done
+          curl -sf localhost:8090/api/metrics
+          curl -sf localhost:8090/api/alerts
+          curl -sf localhost:8090/api/checks
+          curl -sf localhost:8090/ | grep -q "Shop Service Monitoring Dashboard"

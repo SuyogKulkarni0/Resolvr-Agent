@@ -1,72 +1,78 @@
-# Triage Agent: demo app (Phase 1)
+# Triage Agent: an AI on-call engineer for monitoring
 
-A small simulated "Shop" service you can break on purpose, so a monitoring agent has real incidents to investigate. Python standard library only, no installs.
+[![tests](https://github.com/SuyogKulkarni0/agentic-ai-monitoring-tool/actions/workflows/tests.yml/badge.svg)](https://github.com/SuyogKulkarni0/agentic-ai-monitoring-tool/actions/workflows/tests.yml)
+![python](https://img.shields.io/badge/python-3.9%2B-blue)
+![dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 
-## Run it
+When an alert fires, an AI agent investigates it like an on-call engineer: it reads the metrics, logs and recent deploys, works out the likely cause, proposes a fix, and **waits for a human to approve** before changing anything. It then proves the fix worked with a live before/after check.
+
+![Dashboard showing a resolved incident](docs/dashboard.png)
+
+## Try it in 60 seconds
+
+Needs Python 3.9+ and nothing else (standard library only). On macOS/Linux use `python3`.
 
 ```bash
-cd demo_app
-PORT=8090 python app.py        # PowerShell: $env:PORT=8090; python app.py
+git clone https://github.com/SuyogKulkarni0/agentic-ai-monitoring-tool.git
+cd agentic-ai-monitoring-tool
+python run_demo.py              # starts the service and opens the dashboard
+python run_demo.py --agent      # ...and starts the AI agent too
 ```
 
-Open http://localhost:8090 for the live control panel.
+For `--agent` you need a brain, either of:
+- the Claude API: set `ANTHROPIC_API_KEY` (and `pip install anthropic`), or
+- a free local model: install [Ollama](https://ollama.com) and run `ollama pull qwen2.5:7b`.
+
+Then click **deploy v1.1.0 (bad)** under *Failure injection*. The alert fires, the agent investigates, and an **Approve / Deny** box appears. Approve it and watch the *Live checks* panel go from FAIL to PASS.
+
+## How it works
+
+![Architecture](docs/architecture.png)
+
+1. The service's **monitor loop** evaluates alert rules every second; an alert fires.
+2. The **agent** wakes up and uses an LLM to decide what to check.
+3. It can only call four **read-only tools**: alerts, metrics, logs, deploy history. It ends with a structured diagnosis: root cause, evidence, proposed action, confidence.
+4. **Guardrails** (plain code, not the model) decide whether the proposal may run, then ask a human to approve in the browser.
+5. If approved, the action is applied (roll back, or clear the fault).
+6. The agent **verifies** recovery and the *Live checks* stream shows the metric going back under its limit. Every step is in an audit log.
+
+## What each part of the dashboard is for
+
+| Section | Looks like | Purpose |
+|---|---|---|
+| Metric tiles and charts | Grafana-style widgets | Health at a glance, with the alert thresholds drawn in |
+| **Alerts** | Alertmanager-style cards | Which rules are firing, for how long, plus recently resolved |
+| **Live checks** | A PASS/FAIL measurement stream | Confirms the problem, the fix and the recovery, in order |
+| **Service logs** | Real syslog (`journalctl -u shop -f`) | What the application itself writes |
+| **Failure injection** | Terminal-style buttons | Break the service on purpose, or put it back |
+| **Triage Agent** | Separate panel with step cards | What the AI is doing, the incident summary, and the Approve / Deny buttons |
+
+The *Live checks* stream is the evidence. A real run looks like this:
+
+```
+CHANGE  deploy          v1.1.0 deployed (release with checkout changes)
+ALERT   HighErrorRate   5xx error rate 18.7% exceeds 10%                FIRING
+CHECK   error_rate_pct  47.6% > 10%                                      FAIL
+AGENT   operator        approved the action                              APPROVED
+CHANGE  deploy          v1.0.0 deployed (automated rollback)
+ACTION  triage-agent    rollback to v1.0.0 applied                       DONE
+ALERT   HighErrorRate   5xx error rate back to 9.7% after 79s            RESOLVED
+CHECK   error_rate_pct  8.3% <= 10%                                      PASS
+```
 
 ## Failure scenarios
 
-| Button / API call | What happens | Alert that fires |
+| Button | What happens | Alert that fires |
 |---|---|---|
-| Memory leak (`fault=leak`) | Each request retains 1 MB | HighMemory |
-| DB errors (`fault=errors`) | ~50% of requests return 500, "connection pool exhausted" | HighErrorRate |
-| Slow responses (`fault=slow`) | 1.2-2.5 s per request | HighLatencyP95 |
-| Dependency down (`fault=inventory_down`) | Every order returns 502, "inventory unreachable" | HighErrorRate |
-| Deploy bad release (`v1.1.0`) | ~40% 500s with a `KeyError` in checkout; shows in deploy history | HighErrorRate |
+| memory-leak | Each request retains 1 MB | HighMemory |
+| db-errors | About half of requests fail: "connection pool exhausted" | HighErrorRate |
+| slow-responses | 1.2-2.5 s per request | HighLatencyP95 |
+| dependency-down | Every order returns 502, "inventory unreachable" | HighErrorRate |
+| deploy v1.1.0 (bad) | A bug in checkout: about 40% of requests fail with a `KeyError` | HighErrorRate |
 
-Fix paths for the agent to learn: rollback to `v1.0.0`, clear the fault, or reset.
+## Guardrails
 
-## API the agent will use
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/alerts` | Currently firing alerts |
-| `GET /api/metrics` | req/s, error rate, p95 latency, memory |
-| `GET /api/logs?n=50` | Recent structured logs |
-| `GET /api/deploys` | Deploy history (the "what changed?" clue) |
-| `POST /admin/deploy` `{"version":"v1.0.0"}` | Rollback action |
-| `POST /admin/fault` `{"mode":"none"}` | Clear-fault action |
-
-Logs and deploy history are also written to `data/app.log` and `data/deploys.jsonl`.
-
-## Phase 2: read-only triage agent
-
-`agent/agent.py` investigates firing alerts with Claude tool use. It has four read-only tools (alerts, metrics, logs, deploys) and one `submit_diagnosis` tool that returns the root cause, evidence, a proposed action and a confidence score. It cannot change anything. Diagnoses are appended to `data/diagnoses.jsonl`.
-
-```bash
-pip install anthropic
-export ANTHROPIC_API_KEY=...     # PowerShell: $env:ANTHROPIC_API_KEY="..."
-python agent/agent.py            # triage once (break something in the UI first)
-python agent/agent.py --watch    # poll every 10 s
-```
-
-Tests use a scripted fake model, so they need no API key or running service:
-
-```bash
-cd agent && python -m unittest -v
-```
-
-## No API key? Run on a free local model
-
-The agent can use Ollama instead of the Claude API. Install Ollama from https://ollama.com, then:
-
-```bash
-ollama pull qwen2.5:7b
-python agent/agent.py --backend ollama      # also the default when ANTHROPIC_API_KEY is not set
-```
-
-Set `AGENT_MODEL` to try another tool-capable model. `agent/ollama_client.py` translates between the agent's tool-use format and Ollama's chat API, so the loop and guardrails are identical on both backends. Measured on a CPU-only laptop (WSL, 12 threads), `qwen2.5:7b` diagnosed the bad-deploy incident correctly in about 4 minutes; a GPU or a hosted model is much faster. If a local model writes its answer as JSON text instead of calling the tool, the agent accepts it only if it passes the same validation. Local 7B models are less reliable than Claude; the guardrails and the confidence floor exist for that reason.
-
-## Phase 3: guarded actions
-
-The model only proposes; `agent/guardrails.py` decides whether anything runs.
+The model only proposes. `agent/guardrails.py` decides whether anything runs.
 
 | Guardrail | Rule |
 |---|---|
@@ -74,38 +80,13 @@ The model only proposes; `agent/guardrails.py` decides whether anything runs.
 | Known-good target | Rollback only to versions in `KNOWN_GOOD_VERSIONS` |
 | Confidence floor | Below 70% the agent escalates and does not even ask for approval |
 | Rate limit | At most 3 executed actions per hour |
-| Human approval | Explicit `y` required, default is No |
-| Verification | After acting, alerts are re-checked for up to 45 s; if they persist, it escalates |
-| Audit log | Every step (diagnosis, approved/denied, executed, verified) goes to `data/audit.jsonl` |
-
-```bash
-python agent/agent.py                  # diagnose, ask approval, act, verify
-python agent/agent.py --dry-run        # approval flow, but never executes
-python agent/agent.py --diagnose-only  # Phase 2 behaviour
-```
-
-## Watch the agent work, live
-
-The page at http://localhost:8090 has an **Agent activity** timeline. Every step the agent takes appears as it happens, like watching an engineer work: the alert it noticed, each check it ran and what it found, its reasoning, the diagnosis with evidence, the policy check, the human decision, the action, and whether the alerts cleared. Approval can be given with **Approve / Deny buttons on the page**.
-
-```bash
-python agent/agent.py --watch --browser-approval --backend ollama
-```
-
-Then click a failure button on the page. The agent notices the alert on its own and the timeline fills in. Events are posted to the demo app by `agent/reporter.py` (best effort: if the page is down the agent carries on) and the audit log stays the source of truth. All timeline text comes from the model, so the page escapes it before display.
-
-## Phase 4: eval
-
-`eval/run_eval.py` injects each failure several times, runs the agent in read-only mode, scores the diagnosis against ground truth and writes `eval/RESULTS.md`:
-
-```bash
-python eval/run_eval.py --runs 3 --backend ollama     # all 5 scenarios x 3 runs; resumable with --resume
-cd eval && python -m unittest                         # scoring tests
-```
-
-Scoring is a keyword match on the root cause plus an allowed-action check (see `SCENARIOS`). Two things keep the eval honest: reset clears logs and deploy history so one incident's errors cannot leak into the next, and the config-change log line does not name the fault.
+| Human approval | Explicit Approve required; a timeout or closed page counts as No |
+| Verification | After acting, alerts are re-checked; the "after" numbers are taken once the metrics settle. If alerts persist it escalates |
+| Audit log | Every step goes to `data/audit.jsonl` |
 
 ## Results (qwen2.5:7b, CPU-only laptop, 15 runs)
+
+`eval/run_eval.py` injects each failure three times, runs the agent read-only, and scores the diagnosis against the known cause.
 
 | Scenario | Reached diagnosis | Root cause right | Action OK | Fully correct | Avg seconds |
 |---|---|---|---|---|---|
@@ -117,12 +98,55 @@ Scoring is a keyword match on the root cause plus an allowed-action check (see `
 | **Overall** | **15/15** | **12/15 (80%)** | **4/15 (27%)** | **3/15 (20%)** | **155** |
 
 What this shows:
-- The small local model usually finds the cause (80%) and always reaches a diagnosis, but it picks the wrong fix. It proposed a rollback when no bad release had shipped (leak, dependency down, slow) and `restart` for DB errors.
-- It missed the slow-response incident entirely, blaming a vague "configuration change" log line.
-- Guardrails on the 11 wrong-action proposals: 5 were blocked by policy (`restart` is not allowlisted; one rollback targeted an unknown version). The other 6 were rollbacks to the already-running v1.0.0, which policy allows, so they would have reached the human approval prompt. Human approval is the last line of defence, which is why it is mandatory.
-- Limits: one model, 3 runs per scenario, keyword scoring, a simulated service. Not a general benchmark. Scoring counts `restart` for DB errors as wrong because it is not allowlisted; a stricter or looser rubric changes the action numbers.
+- A small local model usually finds the cause (80%) but often picks the wrong fix. It proposed a rollback when no bad release had shipped, and `restart` for DB errors.
+- It missed the slow-response incident, blaming a vague "configuration change" log line.
+- Of the 11 wrong-action proposals, 5 were blocked by policy. The other 6 were rollbacks to the already-running v1.0.0, which policy allows, so they would have reached the human approval step. Human approval is the last line of defence, which is why it is mandatory.
+- Limits: one model, three runs per scenario, keyword scoring, a simulated service. This is not a general benchmark. Scoring counts `restart` for DB errors as wrong because it is not allowlisted.
 
-Ideas to improve the numbers: a larger model or the Claude API, a prompt that says rollback only applies when a deploy preceded the incident, and tool outputs that include current vs. previous version.
+Ideas to improve it: a stronger model, a prompt that says rollback only applies when a deploy preceded the incident, and tool outputs that include the current vs. previous version.
 
-## Next steps
-Demo recording; compare with a stronger model.
+## Design decisions worth knowing
+
+- **The model proposes, code decides.** Safety does not depend on the model behaving well.
+- **Reading and acting are separate.** The investigating agent has no write tools; a test enforces it.
+- **Escalation is the default.** Low confidence, an unknown action, the rate limit or a failed verification all hand off to a human.
+- **Model output is untrusted.** The dashboard escapes everything the agent writes; the agent accepts a text-only diagnosis only if it passes the same validation as a tool call.
+- **Eval hygiene.** Early runs were wrong for the wrong reasons: stale logs from a previous incident leaked in as evidence, and one log line named the injected fault. Reset now clears logs and history, and the config-change line is deliberately vague.
+- **Verification waits for calm.** Alerts clear as soon as a metric dips under its limit, but a rolling window still holds some of the failure, so the "after" reading waits until the numbers settle.
+
+## Project layout
+
+```
+run_demo.py            one-command launcher
+demo_app/              simulated shop service, monitor loop, alert rules, dashboard
+agent/agent.py         the investigation loop and tools
+agent/guardrails.py    policy, approval, verification, audit log
+agent/ollama_client.py local-model backend (same interface as the Claude SDK)
+agent/reporter.py      streams the agent's steps to the dashboard
+eval/                  eval harness, results and scoring tests
+docs/                  diagrams and screenshots
+```
+
+## Agent options
+
+```bash
+python agent/agent.py --watch --browser-approval   # the demo mode (what run_demo.py --agent runs)
+python agent/agent.py                              # one investigation, approve in the terminal
+python agent/agent.py --dry-run                    # full approval flow, but never executes
+python agent/agent.py --diagnose-only              # diagnosis only
+python agent/agent.py --backend ollama             # force the local model (AGENT_MODEL to change it)
+python eval/run_eval.py --runs 3 --backend ollama  # the eval (resumable with --resume)
+```
+
+## Tests
+
+```bash
+cd agent && python -m unittest -v    # agent loop, guardrails, live view
+cd eval  && python -m unittest -v    # scoring
+```
+
+Both run in CI on every push. The tests use a scripted fake model, so they need no API key or running service.
+
+## Limits and what production would need
+
+This is a simulated service and a demo, not a product. For real use you would replace the simulated service with Prometheus and Alertmanager (the agent would receive webhooks), keep secrets in a vault, restrict the approval button with real authentication, and watch the cost and latency of each investigation (a CPU-only local model took about 2.5 minutes per incident).
