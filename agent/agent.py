@@ -269,6 +269,25 @@ def report(diagnosis):
         f.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), **diagnosis}) + "\n")
 
 
+def wait_for_human(timeout=600, interval=3):
+    """After escalating, keep the escalation card on screen until the human acknowledges it,
+    the alerts clear, or the timeout passes. Otherwise a new investigation would replace it."""
+    try:
+        start_id = max([e["id"] for e in fetch("/api/agent/events")["events"]] or [0])
+    except Exception:
+        return
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(interval)
+        try:
+            if any(e["kind"] == "ack" and e["id"] > start_id for e in fetch("/api/agent/events")["events"]):
+                return
+            if not fetch("/api/alerts"):
+                return
+        except Exception:
+            return
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--watch", action="store_true", help="poll for alerts every 10 seconds")
@@ -311,10 +330,13 @@ def main():
                 if args.diagnose_only:
                     emit("outcome", "Diagnosis only: no action taken", tone="warn")
                 else:
-                    guardrails.handle(diagnosis, approve=approve, dry_run=args.dry_run, emit=emit)
+                    outcome = guardrails.handle(diagnosis, approve=approve, dry_run=args.dry_run, emit=emit)
+                    if outcome in ("escalated", "verification_failed", "execution_failed"):
+                        wait_for_human()
             else:
                 print("Agent did not reach a diagnosis; escalate to a human.")
                 emit("outcome", "No diagnosis reached: escalating to a human", tone="bad")
+                wait_for_human()
             if args.watch:
                 time.sleep(60)  # avoid re-triaging the same incident immediately
         elif not args.watch:

@@ -149,6 +149,7 @@
   .ln.end { padding-top:12px; } .ln.end .t { font-weight:700; font-size:16px; } .ln.end.good .t { color:var(--green); } .ln.end.good .g { color:var(--green); } .ln.end.bad .t { color:var(--red); } .ln.end.warn .t { color:var(--yellow); }
   .ln.work .t { color:#8b93a7; }
   .perm { border:1.5px solid var(--ac); border-radius:10px; margin-top:16px; background:#140f0c; padding:14px 15px 10px; font-size:14.5px; }
+  .perm.esc { border-color:var(--yellow); background:#14120a; } .perm.esc .what { color:var(--yellow); } .perm.esc button.opt::before, .perm.esc button.opt.sel::before { content:"❯ "; white-space:pre; }
   .perm .q { font-weight:700; color:#fff; } .perm .what { color:var(--yellow); font-weight:700; margin:5px 0 2px; } .perm .why { color:#98a0b3; font-size:12.5px; margin-bottom:10px; }
   .perm button.opt { display:block; width:100%; text-align:left; border:0; background:transparent; font:inherit; color:#a9b2c8; padding:7px 10px; border-radius:6px; cursor:pointer; }
   .perm button.opt::before { content:"  "; white-space:pre; color:var(--ac); font-weight:700; } .perm button.opt.sel::before, .perm button.opt:hover::before { content:"❯ "; white-space:pre; }
@@ -402,6 +403,7 @@ let lastKey = '', seenId = null;
 function incidentStatus(run, approval) {
   const last = run[run.length - 1];
   if (approval.status === 'pending') return ['AWAITING APPROVAL', 'wait'];
+  if (last.kind === 'ack') return ['HUMAN HANDLING', 'good'];
   if (last.kind === 'outcome') return [last.title.split(':')[0].toUpperCase(), last.tone === 'good' ? 'good' : last.tone === 'bad' ? 'bad' : 'warn'];
   if (run.some(e => e.kind === 'action') || approval.status === 'approved') return ['APPLYING FIX', 'live'];
   if (run.some(e => e.kind === 'diagnosis')) return ['CHECKING POLICY', 'live'];
@@ -449,6 +451,7 @@ function buildLines(run, verbose) {
       case 'approval': ln(e, e.tone === 'good' ? '' : 'bad', '&#9679;', `<span class="fn">${esc(e.title)}</span>`); break;
       case 'action': phase('ACT', 'only after approval'); ln(e, e.tone === 'bad' ? 'bad' : '', '&#9679;', `<span class="fn">execute</span><span class="args">(${esc(e.title.replace(/^Executed: /, ''))})</span>`); break;
       case 'verification': phase('VERIFY', 'did the alert clear?'); ln(e, e.tone === 'bad' ? 'bad' : '', '&#9679;', `<span class="fn">verify</span><span class="args">()</span>`, (e.tone === 'bad' ? '✗ ' : '✓ ') + e.title.replace(/^Verified: /, ''), e.tone === 'bad' ? 'no' : 'ok'); break;
+      case 'ack': ln(e, '', '&#9679;', `<span class="fn">${esc(e.title)}</span>`); break;
       case 'outcome': ln(e, 'end ' + (e.tone || ''), e.tone === 'good' ? '✓' : e.tone === 'bad' ? '✗' : '!', esc(e.title)); break;
       case 'thought': if (verbose) ln(e, 'say', '&#9679;', esc(clip(e.detail, 300))); break;
       case 'thinking': if (verbose) ln(e, 'dim', '✻', esc(e.title)); break;
@@ -462,11 +465,24 @@ function permDialog(approval) {
   return `<div class="perm"><div class="q">Approve this action?</div><div class="what">${esc(what)}</div><div class="why">${esc(conf)}policy passed · every decision goes to the audit log</div>
     <button class="opt sel" onclick="decide('approved')"><span class="n">1.</span>Yes, run it</button><button class="opt" onclick="decide('denied')"><span class="n">2.</span>No, deny it &mdash; nothing changes</button></div>`;
 }
+function escalationCard(run) {
+  const diag = [...run].reverse().find(e => e.kind === 'diagnosis'), pol = [...run].reverse().find(e => e.kind === 'policy' && e.tone === 'warn');
+  const out = [...run].reverse().find(e => e.kind === 'outcome');
+  const reason = pol ? pol.detail : (out ? out.title : 'The agent could not act on its own.');
+  const sug = diag ? `Suggested but NOT executed: ${diag.action}${diag.target_version ? ' → ' + diag.target_version : diag.target ? ' → ' + diag.target : ''} (${Math.round((diag.confidence || 0) * 100)}% confidence)` : 'No fix was proposed.';
+  return `<div class="perm esc"><div class="q">Escalated to you</div><div class="what">Resolvr-Agent will not change anything for this incident</div>
+    <div class="why">Why: ${esc(clip(reason, 200))}</div><div class="why">${esc(sug)}</div><div class="why">Fix it yourself with the recover buttons on the left, or take it offline.</div>
+    <button class="opt sel" onclick="ack()"><span class="n">1.</span>Acknowledge &mdash; I'll handle it</button></div>`;
+}
+function ack() { fetch('/api/agent/event', {method:'POST', body:JSON.stringify({kind:'ack', title:'Human acknowledged: handling this manually', tone:'good'})}).then(() => { refreshAgent(); refreshChecks(); }); }
 function renderSteps(run, approval, verbose) {
-  const lines = buildLines(run, verbose), finished = run.length && run[run.length - 1].kind === 'outcome';
+  const last = run.length ? run[run.length - 1] : null;
+  const lines = buildLines(run, verbose), finished = run.length && (last.kind === 'outcome' || last.kind === 'ack');
+  const escalated = last && last.kind === 'outcome' && /^Escalated|No diagnosis/.test(last.title);
   if (!lines.length) return '<div class="idle" style="padding:14px 0"><span style="color:var(--ac)">✻</span> Idle. <b>Watching for alerts…</b> Each step the agent takes will appear here.</div>';
   let html = lines.join('');
   if (approval.status === 'pending' && approval.proposal) html += permDialog(approval);
+  else if (escalated) html += escalationCard(run);
   else if (!finished) html += `<div class="ln work"><span class="g" id="spin">✻</span><div class="t"><span id="spin-t">Working…</span></div><span></span></div>`;
   return html;
 }

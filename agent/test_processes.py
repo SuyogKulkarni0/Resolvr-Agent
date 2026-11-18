@@ -74,5 +74,21 @@ class ToolTest(unittest.TestCase):
         self.assertEqual(agent.action_label({"type": "rollback", "target_version": "v1.0.0"}), "rollback to v1.0.0")
 
 
+class WaitForHumanTest(unittest.TestCase):
+    def test_waits_until_the_human_acknowledges(self):
+        calls = iter([{"events": [{"id": 5, "kind": "outcome"}]},                       # baseline
+                      {"events": [{"id": 5, "kind": "outcome"}]},                       # still waiting
+                      {"events": [{"id": 5, "kind": "outcome"}, {"id": 6, "kind": "ack"}]}])
+        with mock.patch.object(agent, "fetch", side_effect=lambda path: next(calls) if "events" in path else [{"alert": "x"}]), \
+             mock.patch.object(agent.time, "sleep"):
+            agent.wait_for_human(timeout=60, interval=0)
+        self.assertRaises(StopIteration, next, calls)   # all three event reads were consumed, then it returned
+
+    def test_returns_when_alerts_clear(self):
+        with mock.patch.object(agent, "fetch", side_effect=lambda path: {"events": []} if "events" in path else []), \
+             mock.patch.object(agent.time, "sleep"):
+            agent.wait_for_human(timeout=60, interval=0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -102,6 +102,8 @@ def mirror_agent_event(e):
         log_check("ACTION", "resolvr", str(e.get("title", "")).replace("Executed: ", "") + " applied", "DONE")
     elif kind == "verification":
         log_check("AGENT", "resolvr", e.get("title", "verification"), "PASS" if e.get("recovered") else "FAIL")
+    elif kind == "ack":
+        log_check("AGENT", "operator", "acknowledged the escalation, handling it manually", "")
     elif kind == "outcome":
         log_check("AGENT", "resolvr", e.get("title", ""), "")
 
